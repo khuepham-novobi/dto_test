@@ -1,0 +1,33 @@
+# Target Odoo environments for the DataOne 17 -> 19 upgrade regression.
+#
+# Values come from .env / config/local.yaml (see local.yaml.example) —
+# nothing here is hard-coded. Each environment needs a matching adapter
+# version ("17" or "19", see adapters/__init__.py).
+#
+# odoo17 is the BASELINE: the workbook's expectations were captured against
+#        it, and DATA_RECONCILIATION tests persist their baseline here.
+# odoo19 is the TARGET under test.
+environments:
+  odoo17:
+    name: "Odoo 17"
+    version: "17"
+    base_url: "${ODOO17_URL:http://localhost:8017}"
+    db: "${ODOO17_DB:dto_qa17}"
+    username: "${ODOO17_USERNAME:admin}"
+    password: "${ODOO17_PASSWORD:admin}"
+    # direct SQL for DATA_RECONCILIATION tests (empty host = SQL tests BLOCKED)
+    pg_host: "${ODOO17_PG_HOST:}"
+    pg_port: "${ODOO17_PG_PORT:5433}"
+    pg_user: "${ODOO17_PG_USER:}"
+    pg_password: "${ODOO17_PG_PASSWORD:}"
+  odoo19:
+    name: "Odoo 19"
+    version: "19"
+    base_url: "${ODOO19_URL:http://localhost:8019}"
+    db: "${ODOO19_DB:dto_qa19}"
+    username: "${ODOO19_USERNAME:admin}"
+    password: "${ODOO19_PASSWORD:admin}"
+    pg_host: "${ODOO19_PG_HOST:}"
+    pg_port: "${ODOO19_PG_PORT:5433}"
+    pg_user: "${ODOO19_PG_USER:}"
+    pg_password: "${ODOO19_PG_PASSWORD:}"

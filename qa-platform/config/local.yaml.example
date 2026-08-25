@@ -1,0 +1,26 @@
+# Copy to config/local.yaml and edit for your workstation (local.yaml is
+# gitignored). Loaded by backend/config.py after .env; real environment
+# variables still win over these values.
+env:
+  # Odoo 17 BASELINE target — always a dedicated QA clone, never the
+  # production copy. The workbook's expectations were captured here.
+  ODOO17_URL: http://localhost:8017
+  ODOO17_DB: <your v17 QA clone, e.g. dto_qa17>
+
+  # Read-only PostgreSQL access for the DATA_RECONCILIATION tests.
+  # Omit to have those tests report BLOCKED instead of running.
+  ODOO17_PG_HOST: localhost
+  ODOO17_PG_PORT: 5433
+  ODOO17_PG_USER: <db user>
+  ODOO17_PG_PASSWORD: <db password>
+
+  # Odoo 19 target, once a local instance exists.
+  ODOO19_URL: http://localhost:8019
+  ODOO19_DB: <your v19 QA database>
+  ODOO19_PG_HOST: localhost
+  ODOO19_PG_PORT: 5433
+  ODOO19_PG_USER: <db user>
+  ODOO19_PG_PASSWORD: <db password>
+
+  # false opens a real Chromium window for UI tests
+  HEADLESS: "true"
