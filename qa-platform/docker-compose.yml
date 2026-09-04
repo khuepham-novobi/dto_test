@@ -1,0 +1,79 @@
+name: qa-platform
+
+services:
+  qa-platform:
+    build:
+      context: .
+    image: dto/qa-platform:latest
+    container_name: qa-platform
+    ports:
+      # 127.0.0.1 only: the QA runner is reached publicly through the
+      # Cloudflare tunnel (qa-platform:7000 over the Docker network), so it
+      # must not be exposed to Tailscale/LAN.
+      - "127.0.0.1:7000:7000"
+    volumes:
+      # Live source mount — edit on Windows, no rebuild needed for code
+      # changes (restart the container to reload).
+      - .:/app
+      # Keep the container's own site-packages and browsers from being
+      # shadowed by anything in the mounted tree.
+      - /app/venv
+      # Excel workbook (source of truth for the test-case registry).
+      # It lives one level above this repo, so it is not covered by the
+      # /app mount. Read-only: sync_registry.py must never write to it.
+      - ../:/workbook:ro
+      # DataOne custom source trees, for the STATIC_ANALYSIS cases
+      # (framework/source_scan.py). Read-only: these tests only grep.
+      - D:/project/dto/dto_17/odoo-17.0/dto_17_custom:/src/dto17:ro
+      - D:/project/dto/dto_19/odoo-19.0/dto_custom:/src/dto19:ro
+    environment:
+      # Bind outside the container. Deliberately passed here rather than in
+      # config/local.yaml — see the note in that file.
+      QA_API: "http://qa-platform:7000"
+      # No display in the container: UI tests must run headless.
+      HEADLESS: "true"
+    extra_hosts:
+      # Lets the runner reach host-published ports (e.g. an Odoo started
+      # outside Docker) as http://host.docker.internal:8017
+      - "host.docker.internal:host-gateway"
+    networks:
+      - default
+      - dto
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:7000/ > /dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
+  # ---------------------------------------------------- report-mailer --
+  # Theo doi cac run va tu dong gui report qua email khi mot run ket thuc.
+  # Dung chung image voi qa-platform, chi khac command. Tren lan chay dau
+  # tien no danh dau moi run cu la "da gui" nen khong mail lai lich su.
+  report-mailer:
+    image: dto/qa-platform:latest
+    container_name: qa-report-mailer
+    depends_on:
+      qa-platform:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - /app/venv
+    working_dir: /app
+    # Goi API cua qa-platform qua network noi bo, khong qua cong host.
+    environment:
+      QA_API: "http://qa-platform:7000"
+    command: >
+      python scripts/send_report.py --watch --interval 30
+      --to tan.pham@novobi.com
+    restart: unless-stopped
+
+networks:
+  default:
+  dto:
+    # The network created by D:\project\dto\docker\docker-compose.yml.
+    # Joining it lets this container reach the Odoo stack by service name:
+    #   http://odoo17:8069 , http://odoo19:8069 , postgres at db:5432
+    external: true
+    name: dto_default

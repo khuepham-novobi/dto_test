@@ -11,9 +11,12 @@ FAILED/ERROR with artifacts captured, and the run continues with the next test.
 """
 from __future__ import annotations
 
+import logging
 import threading
 import time
 import traceback
+
+log = logging.getLogger(__name__)
 
 from backend.config import load_environments, settings
 from backend.store import Store
@@ -157,8 +160,18 @@ class RunExecutor(threading.Thread):
                 duration_ms=duration_ms, error=error,
                 failed_step=ctx.failed_step, expected=expected, actual=actual,
                 skip_reason=skip_reason, failure_class=failure_class)
-            store.save_details(result_id, ctx.steps, ctx.assertions,
-                               ctx.artifacts)
+            # Persisting evidence must never end the run. A single result
+            # that will not serialise used to raise here, kill the runner
+            # thread, and strand every remaining test at QUEUED with the run
+            # stuck at RUNNING forever. The verdict is already committed by
+            # update_result above; losing one test's step/assertion detail is
+            # a far smaller loss than losing the rest of the suite.
+            try:
+                store.save_details(result_id, ctx.steps, ctx.assertions,
+                                   ctx.artifacts)
+            except Exception as exc:  # noqa: BLE001 — any failure is in scope
+                log.exception("save_details failed for %s (%s); run continues",
+                              test.id, exc)
             store.update_run(self.run_id, **counts)
 
             self.emit({"PASSED": "TEST_PASSED", "FAILED": "TEST_FAILED",

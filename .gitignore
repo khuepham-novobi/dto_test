@@ -1,0 +1,6 @@
+# Hand-delivered archives and local backups, not source.
+*.tar.gz
+# The Excel workbook is the immutable source of truth for the test registry,
+# but it is delivered out-of-band (919 KB binary) and read read-only by
+# scripts/sync_registry.py. Keep it out of git history.
+DataOne_v19_Test_Suite_and_Workflows_v1.0.xlsx

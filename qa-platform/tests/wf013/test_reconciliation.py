@@ -90,7 +90,7 @@ def test_tc007(ctx):
     rpc = ctx.adapter.rpc
 
     with ctx.step("Locate the DTO-Odoo source tree"):
-        root = resolve_source_root()
+        root = resolve_source_root(ctx.env.version)
         if root is None:
             ctx.blocked(
                 "The DTO-Odoo source tree is not reachable from this "

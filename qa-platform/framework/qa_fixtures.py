@@ -19,6 +19,21 @@ QA_USER_NAME = "QA AUTO Internal User"
 QA_USER_PASSWORD = "QaAuto-2026!"
 
 
+def user_groups_field(rpc: OdooRPC) -> str:
+    """Name of the groups m2m on res.users for the environment behind `rpc`.
+
+    Odoo 19 renamed `res.users.groups_id` to `group_ids`. The suites run
+    against BOTH v17 and v19, so neither name can be hardcoded: writing
+    `groups_id` on v19 fails with
+
+        Invalid field 'groups_id' in 'res.users'
+
+    which is what turned TC270, TC271 and TC272 into ERRORs on RUN-7197CCBB
+    rather than letting them assert anything about the ACLs they exist to test.
+    """
+    return "group_ids" if rpc.field_exists("res.users", "group_ids") else "groups_id"
+
+
 def sweep_products(rpc: OdooRPC, name_prefix: str):
     """Delete (or archive when referenced) templates/variants created by a
     previous run of a suite, identified by the name prefix."""
@@ -59,7 +74,7 @@ def ensure_qa_user(rpc: OdooRPC) -> int:
         "name": QA_USER_NAME,
         "login": QA_USER_LOGIN,
         "password": QA_USER_PASSWORD,
-        "groups_id": [(6, 0, [group_user])],
+        user_groups_field(rpc): [(6, 0, [group_user])],
     })
 
 

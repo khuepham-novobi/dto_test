@@ -22,5 +22,21 @@ env:
   ODOO19_PG_USER: <db user>
   ODOO19_PG_PASSWORD: <db password>
 
+  # ---- Static-analysis source trees ------------------------------------
+  # framework/source_scan.py greps the custom addons for APIs Odoo 19
+  # removed. Each root must contain 3rd-addons/ novobi-addons/
+  # project-addons/. docker-compose.yml mounts them read-only.
+  #
+  # ONE ROOT PER TARGET VERSION. resolve_source_root(version) reads
+  # DTO_SOURCE_ROOT_<version> first, so a v19 run greps the v19 tree and a
+  # v17 run greps the v17 tree, with no setting to flip between runs.
+  # Getting this wrong is silent: the scan succeeds and reports the WRONG
+  # tree's findings as the target's breakages (TC007 and TC014 on
+  # RUN-7197CCBB).
+  DTO_SOURCE_ROOT_17: /src/dto17
+  DTO_SOURCE_ROOT_19: /src/dto19
+  # Legacy single-root fallback, used only when no per-version root matches.
+  DTO_SOURCE_ROOT: /src/dto17
+
   # false opens a real Chromium window for UI tests
   HEADLESS: "true"

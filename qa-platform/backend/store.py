@@ -187,19 +187,40 @@ class Store:
             con.execute(f"UPDATE results SET {cols} WHERE id=?",
                         (*fields.values(), result_id))
 
+    @staticmethod
+    def _bindable(value):
+        """sqlite3 binds only str/bytes/int/float/None.
+
+        An assertion's expected/actual is whatever the test compared, and
+        plenty of them compare lists or dicts — a search returning several
+        ids, a set of field names. Binding one raised
+        ``sqlite3.ProgrammingError: type 'list' is not supported`` inside
+        the runner thread, which killed the ENTIRE run: every remaining
+        test stayed QUEUED forever and the run never left RUNNING.
+        Render those as JSON instead, so one awkward value can never again
+        take down a hundred-test run.
+        """
+        if value is None or isinstance(value, (str, bytes, int, float)):
+            return value
+        try:
+            return json.dumps(value, ensure_ascii=False, default=str)
+        except Exception:
+            return repr(value)
+
     def save_details(self, result_id: str, steps, assertions, artifacts):
+        b = self._bindable
         with self._lock, self._conn() as con:
             for s in steps:
                 con.execute(
                     "INSERT INTO steps (result_id,idx,name,status,duration_ms,"
                     "error) VALUES (?,?,?,?,?,?)",
-                    (result_id, s.index, s.name, s.status, s.duration_ms,
-                     s.error))
+                    (result_id, s.index, b(s.name), b(s.status), s.duration_ms,
+                     b(s.error)))
             for a in assertions:
                 con.execute(
                     "INSERT INTO assertions (result_id,name,expected,actual,"
                     "passed) VALUES (?,?,?,?,?)",
-                    (result_id, a["name"], a["expected"], a["actual"],
+                    (result_id, b(a["name"]), b(a["expected"]), b(a["actual"]),
                      1 if a["passed"] else 0))
             for art in artifacts:
                 con.execute(

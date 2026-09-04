@@ -110,7 +110,7 @@ def _manifest_dependencies(root: Path, module: str) -> set:
     traceability=trace("DATAONE-TC012"))
 def test_tc012(ctx):
     with ctx.step("Locate the DTO-Odoo checkout and the target Odoo tree"):
-        root = resolve_source_root()
+        root = resolve_source_root(ctx.env.version)
         if root is None:
             ctx.blocked(
                 "The DTO-Odoo source tree is not reachable from this "

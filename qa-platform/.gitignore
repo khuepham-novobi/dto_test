@@ -9,3 +9,10 @@ __pycache__/
 artifacts/
 data/
 .pytest_cache/
+
+# Build/deploy logs — regenerated on every build, never useful in history.
+*.log
+# FAILURES.md is regenerated per run by scripts/gen_failure_report.py and
+# mailed as an attachment; committing it would churn on every single run.
+# The reviewed, human-written triage lives in docs/FAILURE_TRIAGE.md.
+reports/FAILURES.md

@@ -48,7 +48,7 @@ def _custom_modules(ctx) -> list:
     counts. Returns [] when the checkout is unreachable, which the callers
     treat as BLOCKED.
     """
-    root = resolve_source_root()
+    root = resolve_source_root(ctx.env.version)
     if root is None:
         return []
     modules = []
@@ -129,7 +129,16 @@ def test_tc017(ctx):
             if action.get("state") != "code" or not code.strip():
                 continue
             try:
-                compile(code, action["xml_id"], "exec")
+                # .strip() because that is EXACTLY what Odoo does before
+                # evaluating a code server action:
+                #   safe_eval(self.code.strip(), ..., mode="exec")
+                #   odoo/addons/base/models/ir_actions.py:1016
+                # Compiling the raw stored string instead reports every
+                # well-formatted `<field name="code">` block -- where the body
+                # is indented under the XML tag -- as "unexpected indent
+                # (line 2)", which is how TC017 produced two false positives on
+                # RUN-7197CCBB for actions that run fine.
+                compile(code.strip(), action["xml_id"], "exec")
             except SyntaxError as exc:
                 compile_failures[action["xml_id"]] = f"{exc}"
             found = [token for token in REMOVED_API_TOKENS if token in code]

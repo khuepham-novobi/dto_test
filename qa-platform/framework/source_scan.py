@@ -32,10 +32,36 @@ SKIP_PARTS = {"i18n", "__pycache__", "node_modules", "build", "dist"}
 SKIP_PATH_FRAGMENTS = ("static/description", "static\\description")
 
 
-def resolve_source_root() -> Path | None:
-    """The DTO-Odoo checkout, or None when it is not reachable here."""
-    root = Path(os.environ.get("DTO_SOURCE_ROOT") or DEFAULT_SOURCE_ROOT)
-    return root if root.is_dir() else None
+def resolve_source_root(version: str | None = None) -> Path | None:
+    """The DTO-Odoo checkout for `version`, or None when it is not reachable.
+
+    PER ENVIRONMENT, NOT GLOBAL. `DTO_SOURCE_ROOT` used to be a single setting
+    shared by both targets, and config/local.yaml pinned it to /src/dto17 with
+    a note to "switch it to /src/dto19 when the target under test is Odoo 19".
+    Nobody switches a global on a per-run basis, so every STATIC_ANALYSIS case
+    in a v19 run greps the v17 tree and reports v17 findings as v19 breakages.
+    That is where TC014's `base_revision/models/base_revision.py:66` and TC007's
+    `queue_job/tests/...` hits came from on RUN-7197CCBB.
+
+    Resolution order, first hit wins:
+      1. DTO_SOURCE_ROOT_<version>   e.g. DTO_SOURCE_ROOT_19
+      2. DTO_SOURCE_ROOT             the legacy global, still honoured
+      3. DEFAULT_SOURCE_ROOT
+
+    Callers pass ctx.env.version. Passing nothing keeps the old behaviour.
+    """
+    candidates = []
+    if version:
+        candidates.append(os.environ.get(f"DTO_SOURCE_ROOT_{version}"))
+    candidates.append(os.environ.get("DTO_SOURCE_ROOT"))
+    candidates.append(DEFAULT_SOURCE_ROOT)
+    for candidate in candidates:
+        if not candidate:
+            continue
+        root = Path(candidate)
+        if root.is_dir():
+            return root
+    return None
 
 
 def module_path(root: Path, module: str) -> Path | None:
