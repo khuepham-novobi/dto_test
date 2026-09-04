@@ -53,6 +53,7 @@ Source facts these helpers lean on (verified in DTO-Odoo/3rd-addons)
 from __future__ import annotations
 
 import copy
+import re
 import uuid
 
 from adapters.base import OdooRPC, OdooRPCError
@@ -201,8 +202,44 @@ def ensure_analytic_account(rpc, label="Analytic") -> int:
     return rpc.create("account.analytic.account", vals)
 
 
+PROJECT_PLAN_XMLID = "dto_account.project_analytic_plan"
+CONTRACT_PLAN_XMLID = "dto_account.customer_contract_analytic_plan"
+
+
+def gate_analytic(ctx, order_type="project"):
+    """The line-level analytic distribution dto_account's confirm gate wants.
+
+    ``_validate_analytic_distribution_project`` (dto_account/models/
+    sale_order.py:83) raises ``Project is required`` unless every product
+    line's ``distribution_analytic_account_ids`` sits on the Project plan;
+    the ``buy`` handler (:93) does the same against Customer Contract.
+    TC097 is the only WF-003 case that confirms an order, and its subject is
+    the revision button, not the analytic gate — so it hands its lines a
+    valid distribution rather than dying on an unrelated ValidationError.
+
+    Returns ``None`` when the plan does not resolve (dto_account absent), so
+    a target without it behaves exactly as before.
+    """
+    plan_xmlid = {"project": PROJECT_PLAN_XMLID,
+                  "buy": CONTRACT_PLAN_XMLID}.get(order_type)
+    if not plan_xmlid:
+        return None
+    rpc = ctx.adapter.rpc
+    plan_id = rpc.ref(plan_xmlid)
+    if not plan_id:
+        return None
+    name = fx(f"{MARK} {order_type.title()} Gate")
+    found = rpc.search("account.analytic.account",
+                       [("name", "=", name), ("plan_id", "=", plan_id)],
+                       limit=1)
+    account_id = found[0] if found else rpc.create(
+        "account.analytic.account", {"name": name, "plan_id": plan_id})
+    return {str(account_id): 100}
+
+
 def make_quotation(ctx, order_type="project", tariff_amount=250.0,
-                   lines=None, with_analytic=True, label="Quote"):
+                   lines=None, with_analytic=True, label="Quote",
+                   line_analytic=None):
     """A WF-003 quotation carrying every field the revision must copy.
 
     ``name`` is deliberately left to the ir.sequence (the workbook's SO0042
@@ -221,13 +258,18 @@ def make_quotation(ctx, order_type="project", tariff_amount=250.0,
         lines = [(product_id, 2.0, 100.0)]
     order_line = []
     for pid, qty, price in lines:
-        order_line.append((0, 0, {
+        line_vals = {
             "product_id": pid,
             "product_uom_qty": qty,
             "price_unit": price,
             # dto_sale.action_confirm() requires this on every line
             "requested_delivery_date": "2026-12-31",
-        }))
+        }
+        if line_analytic:
+            # dto_account.action_confirm() requires this on every product
+            # line of a project / buy order — see gate_analytic().
+            line_vals["analytic_distribution"] = line_analytic
+        order_line.append((0, 0, line_vals))
 
     values = {
         "partner_id": partner_id,
@@ -282,6 +324,23 @@ def read_order(rpc, order_id, fields_):
     active=False, and read() on an archived id still works, but search does
     not — helpers here always use read/browse by id for that reason)."""
     return rpc.read("sale.order", [order_id], fields_)[0]
+
+
+_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def plain_text(html: str) -> str:
+    """A chatter body with its markup removed and whitespace collapsed.
+
+    base_revision's v19 port posts the notice through ``_get_html_link()``
+    (3rd-addons/base_revision/models/base_revision.py:151,155), so the body
+    reads ``New revision created: <a ... >S06508-01</a>`` where the 17.0
+    module posted ``"New revision created: %s" % copied_rec.name`` as plain
+    text. The workbook's step 8 ("both chatters contain New revision
+    created: SO0042-01") is about the notice, not about the markup around
+    the name, so the substring test runs against the rendered text.
+    """
+    return " ".join(_TAG_RE.sub(" ", html or "").split())
 
 
 def chatter_bodies(rpc, order_id) -> list[str]:

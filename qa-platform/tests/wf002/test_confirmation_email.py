@@ -24,9 +24,10 @@ import re
 from framework.registry import test_case
 from tests.wf002.common import (MARK, WORKFLOW, WORKFLOW_NAME,  # noqa: F401
                                 confirm, ensure_partner, ensure_product, fx,
-                                line_values, m2o_id, make_quotation,
-                                order_lines, read_order, require_dto_sale,
-                                require_mail_offline, sweep_wf002, trace)
+                                gate_analytic, line_values, m2o_id,
+                                make_quotation, order_lines, read_order,
+                                require_dto_sale, require_mail_offline,
+                                sweep_wf002, trace)
 
 # dto_sale/data/base_automation_data.xml — the recipient map, verbatim.
 RECIPIENTS = {
@@ -70,11 +71,21 @@ def _mails_for(rpc, order_id, fields_=None):
 
 
 def _confirmed_order(ctx, order_type="project", memo="default", **kwargs):
+    """A confirmed order of the given type.
+
+    The line carries the analytic distribution dto_account's gate demands
+    for this order type (``gate_analytic``); without it a ``project`` order
+    dies on ``ValidationError: Project is required`` and a ``buy`` order on
+    ``Customer Contract is required`` — neither of which is what TC083,
+    TC084 or TC086 are asserting.
+    """
     rpc = ctx.adapter.rpc
     product_id = ensure_product(ctx)
     order_id = make_quotation(
         ctx, order_type=order_type, memo=memo,
-        lines=[line_values(product_id)], **kwargs)
+        lines=[line_values(product_id,
+                           analytic=gate_analytic(ctx, order_type))],
+        **kwargs)
     confirm(rpc, order_id)
     return order_id
 
@@ -258,7 +269,8 @@ def test_tc086(ctx):
                 ctx, order_type="project", label="Body",
                 memo=f"{MARK} please expedite",
                 lines=[line_values(product_id, qty=2.0, price=100.0,
-                                   ship_date="2026-09-10")])
+                                   ship_date="2026-09-10",
+                                   analytic=gate_analytic(ctx, "project"))])
             if rpc.field_exists("sale.order", "requester"):
                 rpc.write("sale.order", [order_id],
                           {"requester": fx(f"{MARK} Requester")})
@@ -404,7 +416,24 @@ def test_tc089(ctx):
     try:
         with ctx.step("Step 2: all six filters and the group-by are in the "
                       "composed search arch"):
-            arch = rpc.call("sale.order", "get_view",
+            # The workbook's step 1 opens Sales -> Orders -> Quotations, and
+            # that action sets search_view_id to
+            # sale.sale_order_view_search_inherit_quotation
+            # (sale/views/sale_order_views.xml:1068 on v19, :898 on v17).
+            # That view is mode="primary" (v19 :969, v17 :801), so Odoo does
+            # NOT fold it into the default sale.view_sales_order_filter — and
+            # dto_sale grafts all seven nodes onto it, anchored on
+            # <filter name="sales"> which exists only there
+            # (dto_sale/views/sale_order_views.xml:53-71). Fetching the
+            # default search view therefore never sees them; fetch the view
+            # the Quotations action actually opens.
+            quotation_view = rpc.ref(
+                "sale.sale_order_view_search_inherit_quotation")
+            ctx.check_true(
+                "the Quotations search view resolves — it is the one the "
+                "workbook's step 1 opens and the one dto_sale extends",
+                bool(quotation_view), actual_desc=str(quotation_view))
+            arch = rpc.call("sale.order", "get_view", quotation_view,
                             view_type="search")["arch"]
             expected = ["order_with_tariff", "order_without_tariff",
                         "order_type_project", "order_type_buy",

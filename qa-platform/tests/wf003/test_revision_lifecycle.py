@@ -22,8 +22,9 @@ until the compute is rewritten.
 from framework.registry import test_case
 from tests.wf003.common import (MARK, WORKFLOW, WORKFLOW_NAME,  # noqa: F401
                                 chatter_bodies, fx, m2o_id, make_quotation,
-                                read_order, require_revision_stack,
-                                revision_of, set_sent, sweep_wf003, trace)
+                                plain_text, read_order,
+                                require_revision_stack, revision_of,
+                                set_sent, sweep_wf003, trace)
 
 
 @test_case(
@@ -126,11 +127,19 @@ def test_tc095(ctx):
             notice = f"New revision created: {new['name']}"
             for label, rec_id in (("source", order_id),
                                   ("revision", new_id)):
-                bodies = chatter_bodies(rpc, rec_id)
+                # Matched against the rendered text, not the raw HTML: the
+                # OCA 19.0 port posts the name through _get_html_link()
+                # (base_revision.py:151,155) where 17.0 interpolated it as
+                # plain text, so the body is
+                # "New revision created: <a ...>S06508-01</a>". The
+                # workbook's expectation — that both chatters carry the
+                # notice naming the new record — is unchanged.
+                bodies = [plain_text(b) for b in chatter_bodies(rpc, rec_id)]
                 found = any(notice in b for b in bodies)
                 ctx.check_true(f"{label} chatter carries the notice", found,
                                actual_desc=(f"{len(bodies)} message(s); "
-                                            f"looking for {notice!r}"))
+                                            f"looking for {notice!r}; "
+                                            f"bodies={bodies!r}"))
     finally:
         with ctx.step("Cleanup WF-003 fixtures"):
             try:

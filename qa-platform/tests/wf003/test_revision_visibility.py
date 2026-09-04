@@ -30,7 +30,7 @@ import xml.etree.ElementTree as ET
 from framework.qa_fixtures import require_mail_offline
 from framework.registry import test_case
 from tests.wf003.common import (WORKFLOW, WORKFLOW_NAME,  # noqa: F401
-                                make_quotation, read_order,
+                                gate_analytic, make_quotation, read_order,
                                 require_revision_stack, set_sent,
                                 sweep_wf003, trace)
 
@@ -92,7 +92,13 @@ def test_tc097(ctx):
         orders["sent"], _ = make_quotation(ctx, label="Sent")
         set_sent(rpc, orders["sent"])
 
-        orders["sale"], _ = make_quotation(ctx, label="Confirmed")
+        # The confirmed fixture is the only one that passes dto_account's
+        # analytic gate, which refuses a project order whose lines carry no
+        # Project-plan account (dto_account/models/sale_order.py:83). The
+        # subject here is the header button, not the gate.
+        orders["sale"], _ = make_quotation(
+            ctx, label="Confirmed",
+            line_analytic=gate_analytic(ctx, "project"))
         rpc.call("sale.order", "action_confirm", [orders["sale"]])
 
         orders["cancel"], _ = make_quotation(ctx, label="Cancelled")

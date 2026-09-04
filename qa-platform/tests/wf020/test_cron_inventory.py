@@ -17,11 +17,14 @@ reaches the Workday SFTP endpoint, which convention rule 4 forbids. That
 half is BLOCKED with a precise reason.
 
 TC460 asserts the **version delta** that makes the workflow's silent
-failure mode possible: Odoo 19 added ``failure_count``,
-``first_failure_date`` and ``deactivate`` to ``ir.cron`` and
-auto-deactivates a job after repeated failures
-(``odoo/addons/base/models/ir_cron.py:121``, ``_update_failure_count`` at
-:571). Odoo 17 has none of them. Forcing N consecutive failures needs the
+failure mode possible: Odoo 19 added ``failure_count`` and
+``first_failure_date`` to ``ir.cron`` and auto-deactivates a job after
+repeated failures (``odoo/addons/base/models/ir_cron.py:121``,
+``_update_failure_count`` at :571). ``deactivate`` -- which the
+workbook's v19_watch note lists alongside them -- is a field of
+``ir.cron.progress`` (``ir_cron.py:918-926``), not of ``ir.cron``, so
+each half of the delta is asserted against the model that carries it.
+Odoo 17 has none of them. Forcing N consecutive failures needs the
 crons to actually fire, so that half is BLOCKED too.
 
 EXPECTED v17 OUTCOME: TC008/TC459 PASS (baseline captured, then BLOCKED for
@@ -31,8 +34,10 @@ EXPECTED v19 OUTCOME: TC008/TC459 diff against the stored baseline; any
 difference is a real finding.
 """
 from framework.registry import test_case
-from tests.wf020.common import (CRON_MODULES, V19_CRON_FIELDS,  # noqa: F401
-                                WORKFLOW, WORKFLOW_NAME, cron_rows, trace)
+from tests.wf020.common import (CRON_MODULES,  # noqa: F401
+                                V19_CRON_FIELDS, V19_CRON_PROGRESS_FIELDS,
+                                V19_CRON_PROGRESS_MODEL, WORKFLOW,
+                                WORKFLOW_NAME, cron_rows, trace)
 
 # Crons shared by more than one workflow — TC460's blast-radius claim.
 SHARED_CRONS = {
@@ -203,12 +208,38 @@ def test_tc460(ctx):
         ctx.log(f"present: {present}; absent: {absent}")
 
     with ctx.step("The version delta is exactly as the workbook states: "
-                  "v17 has none of the three fields, v19 has all three"):
+                  "v17 has none of the failure-tracking fields, v19 "
+                  "has them"):
         expected = ([], sorted(V19_CRON_FIELDS)) \
             if ctx.env.version == "17" else (sorted(V19_CRON_FIELDS), [])
         ctx.check(f"(present, absent) on Odoo {ctx.env.version}",
                   {"present": expected[0], "absent": expected[1]},
                   {"present": present, "absent": absent})
+
+    with ctx.step("The rest of the workbook's v19_watch list - deactivate, "
+                  "done, remaining, timed_out_counter - is on "
+                  f"{V19_CRON_PROGRESS_MODEL}, not on ir.cron"):
+        # The workbook writes "ir.cron gains deactivate, done,
+        # failure_count, first_failure_date, remaining,
+        # timed_out_counter". Only the middle pair is on ir.cron
+        # (ir_cron.py:121-122); the rest are fields of IrCronProgress
+        # (ir_cron.py:918-927), the model the new progress API writes
+        # through. Each half of the delta is asserted against the
+        # model that carries it, so a correct v19 target passes and a
+        # target missing the progress model still fails.
+        if not rpc.model_exists(V19_CRON_PROGRESS_MODEL):
+            ctx.check(f"{V19_CRON_PROGRESS_MODEL} exists on Odoo "
+                      f"{ctx.env.version}",
+                      ctx.env.version == "19", False)
+        else:
+            pinfo = rpc.call(V19_CRON_PROGRESS_MODEL, "fields_get",
+                             V19_CRON_PROGRESS_FIELDS,
+                             attributes=["type", "string"])
+            ctx.log(f"{V19_CRON_PROGRESS_MODEL} fields: "
+                    f"{sorted(pinfo)}")
+            ctx.check(f"progress fields on Odoo {ctx.env.version}",
+                      sorted(V19_CRON_PROGRESS_FIELDS),
+                      sorted(pinfo))
 
     with ctx.step("Step 2: the subject cron exists and starts clean"):
         rows = cron_rows(rpc)

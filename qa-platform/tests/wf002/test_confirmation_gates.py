@@ -26,8 +26,19 @@ Every test here confirms (or tries to confirm) an order, so each one calls
 ``require_mail_offline`` first.
 
 EXPECTED v17 OUTCOME: PASS for all.
-EXPECTED v19 OUTCOME: TC073, TC077 and TC085 PASS; TC074 and TC078–TC082
-ERROR on the removed analytic helper.
+EXPECTED v19 OUTCOME: TC073 and TC077 PASS; TC074 and TC078-TC082 pass once
+dto_account is ported (it now is — the handlers read
+``distribution_analytic_account_ids``, dto_account/models/sale_order.py:83).
+
+**TC085 is EXPECTED to FAIL on v19, and that failure is the remediation.**
+``dto_sale/migrations/19.0.0.2/post-migrate.py`` rewrites the server action
+from ``if 'IRM' in order.memo_to_suppliers:`` to
+``if 'IRM' in (order.memo_to_suppliers or ''):`` on every upgraded database
+(decision D-19, signed, with an expected_deltas row). The TypeError this
+case documents therefore no longer fires on the target: the order confirms
+and one email is sent. Convention rule 2 — the workbook's expectation
+describes the v17 defect and is not inverted here; the v19 run classifies it
+as FIXED. Do not "repair" this test by asserting the new behaviour.
 """
 from framework.registry import test_case
 from tests.wf002.common import (ANALYTIC_PLANS, CONTRACT_ERROR,  # noqa: F401
@@ -446,7 +457,15 @@ def test_tc085(ctx):
     try:
         with ctx.step("Steps 1-2: a fully valid quotation whose "
                       "memo_to_suppliers is EMPTY"):
-            order_id = make_quotation(ctx, order_type="inventory", memo="",
+            # memo=None OMITS the field so the Text field's own default
+            # (False) applies. Writing "" does NOT produce False on either
+            # version — Char/Text keep the empty string through
+            # convert_to_cache (v17 odoo/fields.py:1985, v19
+            # odoo/orm/fields_textual.py:107, where falsy_value = '' is now
+            # explicit) — and `'IRM' in ''` is a clean False, so the whole
+            # premise of this case (`'IRM' in False` -> TypeError) never
+            # fires. The workbook's "EMPTY" means unset, not blank-string.
+            order_id = make_quotation(ctx, order_type="inventory", memo=None,
                                       label="EmptyMemo")
             ctx.check("memo_to_suppliers", False,
                       read_order(rpc, order_id,

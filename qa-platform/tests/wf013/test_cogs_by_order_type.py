@@ -33,7 +33,7 @@ case that names that finding.
 from framework.registry import test_case
 from tests.wf013.common import (ACCRUED_REVENUE_CODE, MARK,  # noqa: F401
                                 WORKFLOW, WORKFLOW_NAME,
-                                accrued_revenue_account,
+                                accrued_revenue_account, anglo_saxon_lines,
                                 ensure_analytic_account, ensure_product,
                                 lines_by_account_type, m2o_id, move_lines,
                                 realtime_category, require_anglo_saxon,
@@ -78,21 +78,13 @@ def _analytic_for(ctx, order_type):
 
 
 def _cogs_pair(ctx, invoice_id):
-    """(cogs_line, interim_line) — the anglo-saxon pair, or (None, None)."""
-    rpc = ctx.adapter.rpc
-    grouped = lines_by_account_type(rpc, invoice_id)
-    account_types = {m2o_id(ln["account_id"]): key
-                     for key, lines in grouped.items() for ln in lines}
-    pair = [ln for ln in move_lines(rpc, invoice_id)
-            if not ln["display_type"] and not ln["is_cogs"]
-            and account_types.get(m2o_id(ln["account_id"]))
-            not in ("income", "asset_receivable")
-            and (ln["debit"] or ln["credit"])]
-    if len(pair) != 2:
-        return None, None, pair
-    cogs = next((ln for ln in pair if ln["debit"] > 0), None)
-    interim = next((ln for ln in pair if ln["credit"] > 0), None)
-    return cogs, interim, pair
+    """(cogs_line, interim_line, matched) — the anglo-saxon pair.
+
+    Delegates to ``common.anglo_saxon_lines``; see its docstring for why the
+    pair is selected on ``display_type == 'cogs'`` rather than on a falsy
+    ``display_type``.
+    """
+    return anglo_saxon_lines(ctx.adapter.rpc, invoice_id)
 
 
 def _table_case(ctx, order_type, expected_cogs_debit, expected_ar_code,

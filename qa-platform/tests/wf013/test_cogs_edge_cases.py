@@ -34,8 +34,8 @@ from framework.registry import test_case
 from tests.wf013.common import (ACCRUED_REVENUE_CODE,  # noqa: F401
                                 COGS_ANALYTIC_XMLIDS, MARK, WORKFLOW,
                                 WORKFLOW_NAME, accrued_revenue_account,
-                                ensure_analytic_account, ensure_partner,
-                                ensure_product, expect_error,
+                                anglo_saxon_lines, ensure_analytic_account,
+                                ensure_partner, ensure_product, expect_error,
                                 lines_by_account_type, m2o_id, move_lines,
                                 realtime_category, require_anglo_saxon,
                                 require_cogs_analytic_accounts,
@@ -157,16 +157,7 @@ def test_tc228(ctx):
                       "the sales price, and the move balances"):
             ctx.check("is_cogs receivable lines", 1,
                       len([ln for ln in ar if ln["is_cogs"]]))
-            grouped = lines_by_account_type(rpc, invoice_id)
-            account_types = {m2o_id(ln["account_id"]): key
-                             for key, lines in grouped.items()
-                             for ln in lines}
-            pair = [ln for ln in move_lines(rpc, invoice_id)
-                    if not ln["display_type"] and not ln["is_cogs"]
-                    and account_types.get(m2o_id(ln["account_id"]))
-                    not in ("income", "asset_receivable")
-                    and (ln["debit"] or ln["credit"])]
-            cogs = next((ln for ln in pair if ln["debit"] > 0), None)
+            cogs, _interim, pair = anglo_saxon_lines(rpc, invoice_id)
             ctx.log(f"anglo-saxon pair: {pair!r}")
             ctx.check_true("the COGS basis is independent of the redirect",
                            cogs is not None

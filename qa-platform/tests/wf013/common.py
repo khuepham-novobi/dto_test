@@ -225,19 +225,83 @@ def accrued_revenue_account(rpc):
     return rows[0] if rows else None
 
 
+# The two account properties core needs before it will emit the pair. v19
+# reads accounts['stock_valuation'] for the Interim leg where v17 read
+# accounts['stock_output'] (stock_account/models/account_move.py:115 vs
+# v17 :127 — decision D-32), and both versions read accounts['expense'];
+# core `continue`s past the line when either is missing
+# (v19 :117-118, v17 :128-129), producing NO lines and no error.
+_VALUATION_ACCOUNT_FIELDS = ("property_stock_valuation_account_id",
+                             "property_account_expense_categ_id")
+
+
 def realtime_category(ctx):
     """A product category with real-time valuation, or None.
 
     Without one the invoice produces no anglo-saxon COGS lines at all, so
     every COGS assertion would be vacuous.
+
+    A category whose valuation or expense account is unset is just as
+    vacuous — core skips the line silently — so a fully configured category
+    is preferred, and the reason is logged when only a partly configured one
+    exists.
     """
     rpc = ctx.adapter.rpc
     if not rpc.field_exists("product.category", "property_valuation"):
         return None
+    fields_ = ["name", "property_cost_method"] + [
+        f for f in _VALUATION_ACCOUNT_FIELDS
+        if rpc.field_exists("product.category", f)]
     rows = rpc.search_read("product.category",
                            [("property_valuation", "=", "real_time")],
-                           ["name", "property_cost_method"], limit=1)
-    return rows[0] if rows else None
+                           fields_)
+    if not rows:
+        return None
+    complete = [r for r in rows
+                if all(r.get(f) for f in _VALUATION_ACCOUNT_FIELDS
+                       if f in fields_)]
+    if complete:
+        return complete[0]
+    ctx.log("[warn] no real-time product.category on this target has both "
+            f"{' and '.join(_VALUATION_ACCOUNT_FIELDS)} set; core will skip "
+            "the anglo-saxon pair for every line in that category "
+            "(stock_account/models/account_move.py:117). Using "
+            f"{rows[0]['name']!r} anyway so the rest of the case still runs.")
+    return rows[0]
+
+
+def anglo_saxon_lines(rpc, move_id):
+    """The COGS / Interim pair core's anglo-saxon pass added to a move.
+
+    Both versions stamp those two lines ``display_type='cogs'``
+    (v19 stock_account/models/account_move.py:135,155; v17 :150,169) and
+    leave ``is_cogs`` False — ``is_cogs`` is dto_account_cogs' own flag on
+    the revenue / receivable REVERSAL lines it creates
+    (dto_account_cogs/models/account_move.py:108,123), which sit on the
+    income and asset_receivable accounts.
+
+    ``display_type`` is ``required=True`` on account.move.line (v19
+    account/models/account_move_line.py:329, v17 :291), so it is never
+    falsy — filtering on ``not display_type`` matches nothing at all, which
+    is what made every COGS-basis assertion report an empty pair.
+
+    Returns ``(cogs_line, interim_line, all_matched_lines)``; the first two
+    are None when the pass produced something other than a debit/credit
+    pair.
+    """
+    grouped = lines_by_account_type(rpc, move_id)
+    account_types = {m2o_id(ln["account_id"]): key
+                     for key, lines in grouped.items() for ln in lines}
+    pair = [ln for ln in move_lines(rpc, move_id)
+            if ln["display_type"] == "cogs" and not ln["is_cogs"]
+            and account_types.get(m2o_id(ln["account_id"]))
+            not in ("income", "asset_receivable")
+            and (ln["debit"] or ln["credit"])]
+    if len(pair) != 2:
+        return None, None, pair
+    cogs = next((ln for ln in pair if ln["debit"] > 0), None)
+    interim = next((ln for ln in pair if ln["credit"] > 0), None)
+    return cogs, interim, pair
 
 
 # -------------------------------------------------------------- fixtures

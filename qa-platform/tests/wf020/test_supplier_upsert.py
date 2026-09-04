@@ -227,8 +227,18 @@ def test_tc333(ctx):
 
         with ctx.step("Step 6 — THE DESTRUCTIVE ASSERTION: street2 is now "
                       "empty, overwriting 'Bldg 7'"):
+            # `or False` normalises the two shapes a blanked Char can
+            # come back in. The ETL writes the CSV cell verbatim after a
+            # .strip() (dto_purchase_workday/models/res_partner.py:70),
+            # so a blank cell writes '' — and Char keeps the empty string
+            # through convert_to_cache on BOTH versions (v17
+            # odoo/fields.py:1962, v19 odoo/orm/fields_textual.py:107,
+            # where falsy_value = '' is now explicit). The workbook's
+            # expectation is that the field is BLANK, which '' and False
+            # both satisfy; dto_purchase_workday's own _changed_fields
+            # compares the same way (res_partner.py:288).
             ctx.check("street2 after an unconditional blank write", False,
-                      after["street2"])
+                      after["street2"] or False)
 
         with ctx.step("Step 7: every unmapped field is untouched — diff "
                       "column by column"):
@@ -276,10 +286,11 @@ def test_tc333(ctx):
                                      zip_code="", phone="", state="")
             run_supplier_import(ctx, [blank_row], file_label="blanks")
             blanked = partner_by_ref(rpc, ref)
+            # Same blank normalisation as step 6 above.
             ctx.check("all five optional columns blanked",
                       {"street": False, "street2": False, "city": False,
                        "zip": False, "phone": False},
-                      {k: blanked[k] for k in
+                      {k: (blanked[k] or False) for k in
                        ("street", "street2", "city", "zip", "phone")})
 
         with ctx.step("Steps 13-14: an empty name fails ONLY its own row — "

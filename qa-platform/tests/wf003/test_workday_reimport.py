@@ -89,12 +89,21 @@ def test_tc338(ctx):
 
     with ctx.step("Step 16 subtlety: imported_from_workday is copy=False, "
                   "so a revision does not inherit it through copy()"):
-        info = rpc.call("sale.order", "fields_get",
-                        ["imported_from_workday"],
-                        attributes=["copy", "type"])
-        ctx.log(f"fields_get: {info!r}")
+        # Read from ir.model.fields.copied, NOT from fields_get: `copy` is
+        # not a field description attribute on either version — there is no
+        # _description_copy property (v17 odoo/fields.py:858-871, v19
+        # odoo/orm/fields.py:888-901) — so fields_get(attributes=["copy"])
+        # returns nothing for it. ir.model.fields.copied is reflected
+        # straight from bool(field.copy) (v17 ir_model.py:1119, v19
+        # ir_model.py:1186) and is the ORM-level answer this step wants.
+        rows = rpc.search_read("ir.model.fields",
+                               [("model", "=", "sale.order"),
+                                ("name", "=", "imported_from_workday")],
+                               ["name", "copied", "ttype"])
+        ctx.log(f"ir.model.fields: {rows!r}")
+        ctx.check("imported_from_workday is reflected once", 1, len(rows))
         ctx.check("imported_from_workday copy flag", False,
-                  info["imported_from_workday"].get("copy"))
+                  rows[0]["copied"])
         ctx.log("=> step 16 ('True on every revision in the chain') holds "
                 "only because the import writes the flag explicitly on "
                 "every pass, not because copy() carries it")

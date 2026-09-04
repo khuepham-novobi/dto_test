@@ -221,8 +221,18 @@ def test_tc331(ctx):
             ctx.check("row 2 partner id unchanged", seeded["r2"], r2["id"])
             ctx.check("row 2 name", rows[1]["name"], r2["name"])
             ctx.check("row 2 street", "2200 Market St", r2["street"])
+            # `or False` normalises the two shapes a blanked Char can
+            # come back in. The ETL writes the CSV cell verbatim after a
+            # .strip() (dto_purchase_workday/models/res_partner.py:70),
+            # so a blank cell writes '' — and Char keeps the empty string
+            # through convert_to_cache on BOTH versions (v17
+            # odoo/fields.py:1962, v19 odoo/orm/fields_textual.py:107,
+            # where falsy_value = '' is now explicit). The workbook's
+            # expectation is that the field is BLANK, which '' and False
+            # both satisfy; dto_purchase_workday's own _changed_fields
+            # compares the same way (res_partner.py:288).
             ctx.check("row 2 street2 blanked (was 'Bldg 7')", False,
-                      r2["street2"])
+                      r2["street2"] or False)
             ctx.check("row 2 supplier_rank unchanged",
                       before["r2"]["supplier_rank"], r2["supplier_rank"])
 

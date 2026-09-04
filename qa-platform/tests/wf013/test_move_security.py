@@ -54,8 +54,17 @@ def _access_rows(rpc):
     return rows
 
 
-def _make_user(rpc, login_suffix, group_xmlids):
-    """A disposable internal user in the given groups."""
+def _make_user(ctx, login_suffix, group_xmlids):
+    """A disposable internal user in the given groups.
+
+    The groups m2m is version-dependent: ``res.users.groups_id`` on v17
+    (base/models/res_users.py:384) was renamed to ``group_ids`` on v19
+    (:257), where writing the old name raises
+    ``ValueError: Invalid field 'groups_id' in 'res.users'``. The name comes
+    from ``ctx.adapter.user_groups_field`` so no version branch lives here.
+    """
+    rpc = ctx.adapter.rpc
+    groups_field = ctx.adapter.user_groups_field
     login = f"qa.wf013.{login_suffix}"
     group_ids = [rpc.ref(x) for x in ["base.group_user"] + group_xmlids]
     group_ids = [g for g in group_ids if g]
@@ -65,12 +74,12 @@ def _make_user(rpc, login_suffix, group_xmlids):
     if found:
         rpc.write("res.users", found,
                   {"active": True, "password": QA_PASSWORD,
-                   "groups_id": [(6, 0, group_ids)]})
+                   groups_field: [(6, 0, group_ids)]})
         return found[0], login
     user_id = rpc.call("res.users", "create",
                        {"name": f"QA WF013 {login_suffix}",
                         "login": login, "password": QA_PASSWORD,
-                        "groups_id": [(6, 0, group_ids)]},
+                        groups_field: [(6, 0, group_ids)]},
                        context={"no_reset_password": True})
     return user_id, login
 
@@ -121,7 +130,7 @@ def _delete_case(ctx, suffix, group_xmlids, expect_allowed, label):
 
     with ctx.step("Build a disposable user in those groups and a draft "
                   "journal entry to aim at"):
-        user_id, login = _make_user(rpc, suffix, group_xmlids)
+        user_id, login = _make_user(ctx, suffix, group_xmlids)
         move_id = _draft_move(rpc, label)
         if not move_id:
             ctx.blocked("No general journal exists on this database, so no "

@@ -202,6 +202,38 @@ def ensure_analytic_account(rpc, plan_id, label="Analytic") -> int:
                       {"name": name, "plan_id": plan_id})
 
 
+def gate_analytic(ctx, order_type):
+    """The analytic distribution dto_account's confirmation gate demands.
+
+    ``_validate_analytic_distribution_project`` (dto_account/models/
+    sale_order.py:83) refuses a ``project`` order whose product lines carry
+    no account on the Project plan, and ``_validate_analytic_distribution_buy``
+    (:93) does the same against the Customer Contract plan;
+    ``inventory`` and ``cost_center`` refuse ANY distribution.
+
+    Every WF-002 case that CONFIRMS an order but whose subject is something
+    else (the confirmation email, the revision button, the search filters)
+    must therefore hand its product lines a valid distribution, or it fails
+    on a gate that has nothing to do with what it asserts. The analytic gate
+    itself is TC078-TC082's subject and those build their distributions
+    explicitly — they do not call this.
+
+    Returns ``None`` when the order type needs no distribution, or when
+    dto_account's plans do not resolve on this target, so a database without
+    dto_account behaves exactly as it did before.
+    """
+    plan_key = {"project": "project", "buy": "contract"}.get(order_type)
+    if plan_key is None:
+        return None
+    rpc = ctx.adapter.rpc
+    plan_id = rpc.ref(ANALYTIC_PLANS[plan_key])
+    if not plan_id:
+        return None
+    account_id = ensure_analytic_account(rpc, plan_id,
+                                         f"{order_type.title()} Gate")
+    return {str(account_id): 100}
+
+
 def line_values(product_id, qty=1.0, price=100.0, ship_date="2026-09-10",
                 analytic=None, display_type=None, name=None):
     """One order-line command payload.
