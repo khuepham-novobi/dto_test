@@ -22,7 +22,13 @@ already exist. Convention rule 5 forbids that dependency, so this test
 rebuilds the lineage with its own execution token first.
 
 EXPECTED v17 OUTCOME: PASS.
-EXPECTED v19 OUTCOME: BLOCKED until the OCA 19.0 ports exist (E5).
+EXPECTED v19 OUTCOME: PASS. The 19.0 port replaced ``_sql_constraints`` with
+``models.UniqueIndex((unrevisioned_name, revision_number, company_id), ...)``
+(sale_order_revision/models/sale_order.py:24) — same three columns, same
+message, same enforcement, but ``ir.model.constraint.type`` reflects as
+``'i'`` rather than ``'u'`` (ir_model.py:2003). Step 1 accepts either
+letter and keeps asserting the column list, the owning module and the
+message, which is what the workbook actually specifies.
 """
 from framework.registry import test_case
 from tests.wf003.common import (WORKFLOW, WORKFLOW_NAME,  # noqa: F401
@@ -89,7 +95,21 @@ def test_tc098(ctx):
             ctx.check("exactly one reflected constraint named "
                       f"{CONSTRAINT_NAME}", 1, len(rows))
             row = rows[0]
-            ctx.check("constraint type", "u", row["type"])
+            # v17 declared this through _sql_constraints, which Odoo
+            # reflects as type 'u'. The OCA 19.0 port declares it as
+            # models.UniqueIndex (3rd-addons/sale_order_revision/models/
+            # sale_order.py:24), and ir.model.constraint stamps
+            # `typ = 'i' if isinstance(cons, models.Index) else 'u'`
+            # (base/models/ir_model.py:2003) — so the same rule now
+            # reflects as 'i'. Both enforce uniqueness in PostgreSQL; the
+            # workbook's step 1 is about WHICH rule is in force (the
+            # company-scoped three-column one from sale_order_revision),
+            # asserted by the module, column list and message below, and
+            # steps 2-4 prove the enforcement behaviourally.
+            ctx.check_true(
+                "the reflected object enforces uniqueness "
+                "('u' = table constraint, 'i' = unique index)",
+                row["type"] in ("u", "i"), actual_desc=repr(row["type"]))
             ctx.check("owning module", "sale_order_revision",
                       (row["module"] or [None, None])[1])
             definition = (row["definition"] or "").lower()

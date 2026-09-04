@@ -5,23 +5,32 @@ an unroutable host and is never connected to; nothing here calls
 ``get_sftp_connection``, ``action_test_connection`` or any ``cron_*``.
 
 TC302 is the workflow's live-defect case and the most valuable test in this
-file. ``sftp_folder.action_get_files`` (novobi_sftp_connection/models/
-sftp_folder.py:76) runs::
+file. On v17 ``sftp_folder.action_get_files`` ran::
 
     regex = self.regex and re.match(self.regex) or None
 
 ``re.match`` takes ``(pattern, string)`` — calling it with one argument
-raises ``TypeError`` before the connection is ever used. The method is
-PUBLIC, and the failure happens on the line above the first connection
-call, so the defect is reproducible over RPC by passing a dummy
-connection: with a non-empty regex the call dies on ``re.match``; with an
-empty regex it gets one line further and dies on the dummy connection
-instead. That difference is the proof, and it needs no SFTP at all.
+raised ``TypeError`` before the connection was ever used, aborting the
+whole GET poll for that server and recording nothing anywhere.
 
-EXPECTED v17 OUTCOME: PASS for all four. TC302 asserts the defect's
-*current* behaviour, which the workbook documents as the v17 state; the
-required post-fix outcome is a v19 acceptance criterion, not something this
-test can assert until the port lands.
+**THE PORT HAS LANDED, so this case asserts the post-fix outcome.** The
+workbook states that outcome as a REQUIRED result, not an observation:
+"the port must either (a) implement the filter correctly,
+re.match(self.regex, filename) applied per filename inside get_files, with
+an @api.constrains validating that the pattern compiles; or (b) remove the
+regex field entirely". novobi_sftp_connection took option (a) —
+``action_get_files`` compiles the pattern once and hands it to
+``connection.get_files(folder=..., regex=...)`` (models/sftp_folder.py:125),
+and ``_check_regex`` (:95) refuses an uncompilable pattern at save time.
+Steps 1-4 assert (a). The blast-radius and nothing-was-recorded steps are
+unchanged and still hold: a folder with a VALID regex must now reach the
+connection exactly as an empty-regex folder does.
+
+EXPECTED v17 OUTCOME: FAIL — v17 has neither the compile fix nor the
+constraint, so step 1 stores the invalid pattern instead of refusing it and
+step 3 dies on ``re.match``. Convention rule 2: the expectation describes
+the v19 target state and is not inverted to make v17 green.
+EXPECTED v19 OUTCOME: PASS.
 EXPECTED v19 OUTCOME: TC297 is the one to watch — ``_check_unique_folder``
 uses ``_read_group(..., having=[('__count','>',1)])``; if the aggregate
 return shape changed, the constraint silently stops matching and permits
@@ -296,10 +305,20 @@ def test_tc301(ctx):
                                  fx(f"{MARK} connection refused")),
                                 ("action_post_files",
                                  fx(f"{MARK} remote file exists"))):
+                # `traceback` is deliberately NOT written here.
+                # sftp_log.py:26 declares it groups="base.group_no_one",
+                # and that group is effective in DEBUG SESSIONS ONLY on
+                # both versions (v17 odoo/models.py:1577-1581, v19
+                # base/models/res_users.py:1081-1083). An ordinary RPC
+                # session therefore fails the field-level check with
+                # "allowed for groups 'Technical Features'" and the
+                # whole create is refused. Step 11 below asserts the
+                # field IS developer-only, which is the workbook's
+                # point; none of the row-shape assertions read it.
                 created.append(rpc.create("sftp.log", {
                     "level": "error", "res_model": "sftp.server",
-                    "res_id": server_id, "method": method, "msg": msg,
-                    "traceback": "Traceback (most recent call last): ..."}))
+                    "res_id": server_id, "method": method,
+                    "msg": msg}))
             rows = rpc.read("sftp.log", created,
                             ["level", "state", "res_model", "res_id",
                              "method", "msg"])
@@ -394,13 +413,13 @@ def test_tc301(ctx):
          "the filter is unusable",
     workflow=WORKFLOW, workflow_name=WORKFLOW_NAME,
     module="novobi_sftp_connection", priority="P0", kind="API", order=20302,
-    description="sftp_folder.action_get_files calls re.match(self.regex) "
-                "with one argument. A folder with any non-empty regex "
-                "therefore raises TypeError before the connection is "
-                "touched, aborting the whole GET poll for that server; a "
-                "folder with an empty regex gets one line further, proving "
-                "the regex branch is what raises and that the filter is "
-                "never applied.",
+    description="v17 called re.match(self.regex) with one argument, so any "
+                "non-empty regex raised TypeError before the connection was "
+                "touched and aborted the whole GET poll. The workbook "
+                "requires the port to compile the pattern and validate it "
+                "with @api.constrains: an uncompilable regex is refused at "
+                "save time, and a valid one reaches the connection exactly "
+                "as an empty one does.",
     traceability=trace("DATAONE-TC302"))
 def test_tc302(ctx):
     rpc = ctx.adapter.rpc
@@ -413,19 +432,30 @@ def test_tc302(ctx):
         require_sftp_stack(ctx)
 
     try:
-        with ctx.step("Step 1: the regex field accepts any value with no "
-                      "help text and no validation — part of the finding"):
+        with ctx.step("Step 1 (required outcome (a)): a syntactically "
+                      "INVALID regex is refused at save time by "
+                      "@api.constrains, naming the folder and the compile "
+                      "error"):
             info = rpc.call("sftp.folder", "fields_get", ["regex"],
                             attributes=["help", "string", "type"])
             ctx.log(f"regex field: {info!r}")
-            ctx.check("regex field has no help text", False,
-                      bool(info["regex"].get("help")))
             server_id = make_server(rpc, label="Regex")
-            bad_pattern = make_folder(rpc, server_id, usage="none",
-                                      regex="[unclosed", label="bad")
-            ctx.check_true("a syntactically INVALID regex saves with no "
-                           "validation error", bool(bad_pattern),
-                           actual_desc=f"sftp.folder {bad_pattern}")
+            raised_bad, message_bad = expect_error(
+                make_folder, rpc, server_id, usage="none",
+                regex="[unclosed", label="bad")
+            ctx.log(f"invalid regex save: {message_bad!r}")
+            ctx.check_true(
+                "the invalid pattern was refused rather than stored",
+                raised_bad, actual_desc=message_bad)
+            ctx.check_true(
+                "the message names the field and the compile error",
+                "not a valid regular expression" in message_bad,
+                actual_desc=message_bad)
+            ctx.check("invalid-regex folders stored", 0,
+                      rpc.call("sftp.folder", "search_count",
+                               [("server_id", "=", server_id),
+                                ("regex", "=", "[unclosed"),
+                                ("active", "in", [True, False])]))
 
         with ctx.step("Build FA (regex empty) and FB (regex set) on the "
                       "same server"):
@@ -436,25 +466,31 @@ def test_tc302(ctx):
             ctx.check("FB carries the regex", r"^suppliers_.*\.csv$",
                       rpc.read("sftp.folder", [fb], ["regex"])[0]["regex"])
 
-        with ctx.step("Steps 2-4: driving FB's GET raises TypeError from "
-                      "re.match's arity — before the connection is used, so "
-                      "no endpoint is contacted"):
+        with ctx.step("Steps 2-4 (required outcome (a)): driving FB's GET "
+                      "no longer dies on re.match's arity — the pattern is "
+                      "compiled and handed to get_files, so the call "
+                      "reaches the connection. No endpoint is contacted: "
+                      "the dummy connection is what fails"):
             raised_fb, message_fb = expect_error(
                 rpc.call, "sftp.folder", "action_get_files", [fb], False)
             ctx.log(f"FB raised: {message_fb!r}")
-            ctx.check_true("FB's GET raised", raised_fb,
+            ctx.check_true("FB's GET still failed — there is no real "
+                           "connection to give it", raised_fb,
                            actual_desc=message_fb)
             ctx.check_true(
-                "the message names re.match missing a positional argument",
-                "match()" in message_fb
-                and "missing 1 required positional argument" in message_fb,
+                "FB did NOT fail on re.match's arity — the v17 TypeError "
+                "is gone",
+                not ("match()" in message_fb
+                     and "missing 1 required positional argument"
+                     in message_fb),
                 actual_desc=message_fb)
 
-        with ctx.step("Step 8 (inverted, and the proof): FA with an EMPTY "
-                      "regex gets PAST that line — it fails later, on the "
-                      "connection, with a different error. The regex branch "
-                      "is the only thing that raises, and the filter is "
-                      "never applied when it is empty"):
+        with ctx.step("Step 8 (the control): FA with an EMPTY regex "
+                      "behaves identically — it too fails on the dummy "
+                      "connection, not on the regex branch. The same "
+                      "failure point with and without a pattern is what "
+                      "proves the filter is applied inside get_files "
+                      "rather than exploding before it"):
             raised_fa, message_fa = expect_error(
                 rpc.call, "sftp.folder", "action_get_files", [fa], False)
             ctx.log(f"FA raised: {message_fa!r}")
@@ -487,8 +523,8 @@ def test_tc302(ctx):
                                 ("active", "in", [True, False])])
             ctx.check("sftp.file records created", [], files)
 
-        with ctx.step("Step 8: clearing FB's regex removes the TypeError — "
-                      "it now fails at the same later point FA does"):
+        with ctx.step("Step 8: clearing FB's regex changes nothing — it "
+                      "already fails at the same later point FA does"):
             rpc.write("sftp.folder", [fb], {"regex": False})
             _raised, message_cleared = expect_error(
                 rpc.call, "sftp.folder", "action_get_files", [fb], False)

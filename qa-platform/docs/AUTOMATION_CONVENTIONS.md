@@ -133,6 +133,9 @@ helpers, never `if version` scattered in test bodies. The verified pairs:
 | SO cancel | wizard unless `disable_cancel_warning` (`sale_order.py:1096`) | no wizard, cancels directly (`sale_order.py:1325`) | `adapter.cancel_order(id)` |
 | Record URL | `/web#id=<id>&model=…` | `/odoo/<path>/<id>` (`web/controllers/home.py:46`) | `adapter.order_id_from_url(url)` |
 | ACL check | `check_access_rights(op)` | `check_access(op)`; `check_access_rights` kept as a shim (`orm/models.py:4162`) | assert via RPC `AccessError`, not the method name |
+| User groups m2m | `res.users.groups_id` (`res_users.py:384`) | `res.users.group_ids` (`res_users.py:257`) | `adapter.user_groups_field` |
+| Blank Char/Text | `''` write, `''` read back | same, but `falsy_value = ''` is now explicit (`orm/fields_textual.py:38`) | compare with `value or False` |
+| Cron failure fields | none | `ir.cron.failure_count` / `first_failure_date` (`ir_cron.py:121`); `deactivate` is on **`ir.cron.progress`** (`ir_cron.py:926`) | `wf020.common.V19_CRON_FIELDS` / `V19_CRON_PROGRESS_FIELDS` |
 
 When a new pair is discovered, add it to `adapters/odoo17.py` /
 `adapters/odoo19.py` and to this table — not to a test body.

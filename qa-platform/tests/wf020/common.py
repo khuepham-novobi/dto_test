@@ -72,8 +72,18 @@ CSV_COLUMNS = ["ref", "name", "street", "street2", "city", "zip", "phone",
 # The ten crons the workbook's inventory names for this workflow's modules.
 CRON_MODULES = ["novobi_sftp_connection", "dto_account_workday", "queue_job"]
 
-# v19-only ir.cron fields (odoo/addons/base/models/ir_cron.py:121 ff.).
-V19_CRON_FIELDS = ["failure_count", "first_failure_date", "deactivate"]
+# v19-only failure-tracking fields, split by the model that actually
+# carries them. Verified in D:\Projects\odoo-19.0:
+#   ir.cron.failure_count / first_failure_date  -> ir_cron.py:121-122
+#   ir.cron.progress.deactivate                 -> ir_cron.py:926
+#     (class IrCronProgress, _name = 'ir.cron.progress', ir_cron.py:918)
+# The workbook's v19_watch note for TC460 lists all six new names under
+# "ir.cron gains ...", but deactivate / done / remaining / timed_out_counter
+# live on ir.cron.progress. Asserting `deactivate` against ir.cron therefore
+# fails on a correct v19 target. Convention rule 6: verify before asserting.
+V19_CRON_FIELDS = ["failure_count", "first_failure_date"]
+V19_CRON_PROGRESS_MODEL = "ir.cron.progress"
+V19_CRON_PROGRESS_FIELDS = ["deactivate"]
 
 _TOKEN = "init"
 

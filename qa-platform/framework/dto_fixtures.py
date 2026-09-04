@@ -148,12 +148,32 @@ def order_invoices(rpc, order_id: int, fields_=None) -> list:
     return rpc.read("account.move", invoice_ids, fields_)
 
 
+# The wizard refuses to run when the order has nothing invoiceable - a
+# delivery-policy product with nothing delivered, typically. Odoo raises a
+# UserError, not an empty result: sale.order._nothing_to_invoice_error_message
+# (v19 sale/models/sale_order.py:1485, v17 :1233), whose text is identical on
+# both versions. Callers of create_invoice() already branch on a None return,
+# so the refusal is translated into that rather than surfacing as an
+# AUTOMATION_ERROR that hides whatever the case was actually asserting.
+NOTHING_TO_INVOICE = (
+    "no items are available to invoice",
+    "nothing to invoice",
+    "no invoiceable line",
+    "invoicing policy",
+)
+
+
 def create_invoice(ctx, order_id: int) -> int | None:
     """Create the customer invoice for a confirmed order, without posting.
 
     Uses ``sale.advance.payment.inv`` — the wizard the Create Invoice button
     drives — because ``sale.order._create_invoices`` is private and cannot
     be dispatched over RPC.
+
+    Returns ``None`` (having logged the reason) when Odoo refuses because
+    there is nothing invoiceable yet, so the caller can decide whether that
+    is fatal — ``sell_and_invoice`` treats it as BLOCKED, TC070/TC094 treat
+    it as "the invoice half is not applicable here".
     """
     rpc = ctx.adapter.rpc
     wizard_id = rpc.call(
@@ -161,8 +181,17 @@ def create_invoice(ctx, order_id: int) -> int | None:
         {"advance_payment_method": "delivered"},
         context={"active_model": "sale.order", "active_ids": [order_id],
                  "active_id": order_id})
-    rpc.call("sale.advance.payment.inv", "create_invoices", [wizard_id],
-             context={"active_model": "sale.order", "active_ids": [order_id],
-                      "active_id": order_id})
+    try:
+        rpc.call("sale.advance.payment.inv", "create_invoices", [wizard_id],
+                 context={"active_model": "sale.order",
+                          "active_ids": [order_id],
+                          "active_id": order_id})
+    except OdooRPCError as exc:
+        message = str(exc).lower()
+        if not any(token in message for token in NOTHING_TO_INVOICE):
+            raise
+        ctx.log(f"[warn] create_invoices refused for sale.order {order_id}: "
+                f"{exc}")
+        return None
     invoices = order_invoices(rpc, order_id, ["id", "state"])
     return invoices[-1]["id"] if invoices else None

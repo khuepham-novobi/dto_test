@@ -52,6 +52,11 @@ class Odoo19Adapter(OdooAdapter):
     list_view_type = "list"
     list_tag = "list"
 
+    # v19 renamed res.users.groups_id to group_ids and added the computed
+    # all_group_ids (base/models/res_users.py:257-258); writing 'groups_id'
+    # raises ValueError: Invalid field 'groups_id' in 'res.users'.
+    user_groups_field = "group_ids"
+
     @property
     def ui(self) -> dict:
         return {

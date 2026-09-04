@@ -204,6 +204,12 @@ class OdooAdapter:
 
     version = "?"
 
+    # res.users' groups m2m: 'groups_id' on v17
+    # (base/models/res_users.py:384), renamed to 'group_ids' on v19
+    # (base/models/res_users.py:257). Subclasses set the value; test bodies
+    # read it from the adapter so no version branch reaches a suite.
+    user_groups_field = "group_ids"
+
     def __init__(self, env: EnvironmentConfig):
         self.env = env
         self.rpc = OdooRPC(env)

@@ -56,6 +56,9 @@ class Odoo17Adapter(OdooAdapter):
     list_view_type = "tree"
     list_tag = "tree"
 
+    # res.users.groups_id (base/models/res_users.py:384).
+    user_groups_field = "groups_id"
+
     @property
     def ui(self) -> dict:
         return {

@@ -18,7 +18,9 @@ EXPECTED v17 OUTCOME: BLOCKED for all four, after the offline assertions.
 EXPECTED v19 OUTCOME: BLOCKED, same reason.
 """
 from framework.registry import test_case
-from tests.wf020.common import (MARK, V19_CRON_FIELDS, WORKFLOW,  # noqa: F401
+from tests.wf020.common import (MARK, V19_CRON_FIELDS,  # noqa: F401
+                                V19_CRON_PROGRESS_FIELDS,
+                                V19_CRON_PROGRESS_MODEL, WORKFLOW,
                                 WORKFLOW_NAME, cron_rows, fx, make_folder,
                                 make_server, require_sftp_stack,
                                 sweep_wf020, trace)
@@ -250,11 +252,22 @@ def test_tc305(ctx):
         present = sorted(info)
         ctx.log(f"present on Odoo {ctx.env.version}: {present}")
 
-    with ctx.step("The delta is exactly as the workbook states: v19 added "
-                  "all three fields, v17 has none"):
+    with ctx.step("The delta is exactly as the workbook states: v19 "
+                  "added the failure-tracking fields, v17 has none"):
+        # `deactivate` is NOT one of them: it is a field of
+        # ir.cron.progress (ir_cron.py:918-926), not of ir.cron, so it
+        # is asserted against that model below. See
+        # tests/wf020/common.py:V19_CRON_FIELDS.
         expected = [] if ctx.env.version == "17" else sorted(V19_CRON_FIELDS)
         ctx.check(f"v19 failure-tracking fields on Odoo {ctx.env.version}",
                   expected, present)
+        if ctx.env.version != "17" and rpc.model_exists(
+                V19_CRON_PROGRESS_MODEL):
+            pinfo = rpc.call(V19_CRON_PROGRESS_MODEL, "fields_get",
+                             V19_CRON_PROGRESS_FIELDS,
+                             attributes=["type"])
+            ctx.check(f"{V19_CRON_PROGRESS_MODEL} deactivation flag",
+                      sorted(V19_CRON_PROGRESS_FIELDS), sorted(pinfo))
 
     with ctx.step("The GET poller is active at five minutes — so a "
                   "persistent failure would be retried often enough to "
