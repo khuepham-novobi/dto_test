@@ -301,6 +301,53 @@ class Store:
             e["payload"] = json.loads(e["payload"])
         return events, head, max(0, total_logs - log_tail)
 
+    def log_lines(self, run_id: str, tail: int = 2000) -> list[str]:
+        """The run's narration as rendered TEXT, newest `tail` lines.
+
+        Formatted server-side on purpose. The alternative — replaying the
+        events and letting the browser format them — costs one JSON parse per
+        event, and a full run holds ~48,000 of them.
+        """
+        with self._conn() as con:
+            rows = con.execute(
+                "SELECT type, payload FROM events WHERE run_id=? "
+                "ORDER BY seq DESC LIMIT ?", (run_id, tail)).fetchall()
+        out = []
+        for r in reversed(rows):
+            try:
+                p = json.loads(r["payload"]) or {}
+            except (ValueError, TypeError):
+                continue
+            p = p if isinstance(p, dict) else {}
+            t = r["type"]
+            if t == "LOG":
+                out.append("    " + str(p.get("message", "")))
+            elif t == "TEST_STARTED":
+                out.append(f"● {p.get('test_id')} — {p.get('name')}")
+            elif t == "STEP_STARTED":
+                out.append(f"  → step {p.get('index')}: {p.get('name')}")
+            elif t == "STEP_PASSED":
+                out.append(f"  ✓ step {p.get('index')}")
+            elif t == "STEP_FAILED":
+                out.append(f"  ✗ step {p.get('index')}: {p.get('error')}")
+            elif t == "STEP_SKIPPED":
+                out.append(f"  ⏭ step {p.get('index')}: {p.get('reason')}")
+            elif t == "ASSERTION":
+                out.append(f"  {'✓' if p.get('passed') else '✗'} assert "
+                           f"{p.get('name')}: expected {p.get('expected')}, "
+                           f"got {p.get('actual')}")
+            elif t.startswith("TEST_"):
+                out.append(f"■ {t[5:]} {p.get('test_id')}"
+                           + (f" — {p.get('error')}" if p.get("error") else ""))
+            elif t == "RUN_STARTED":
+                out.append(f"▶ started on {p.get('env_name')} "
+                           f"({p.get('total')} tests)")
+            elif t == "RUN_COMPLETED":
+                out.append(f"✔ COMPLETED — {p.get('passed')} passed, "
+                           f"{p.get('failed')} failed, {p.get('skipped')} "
+                           f"skipped, {p.get('errors')} errors")
+        return out
+
     def run(self, run_id: str) -> dict | None:
         with self._conn() as con:
             r = con.execute("SELECT * FROM runs WHERE id=?",

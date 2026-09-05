@@ -602,10 +602,24 @@ async function viewRun(runId, groupId) {
       .catch(err => { cancelBtn.disabled = false; toast(err.message, { kind: "error" }); });
   };
 
+  /* Counters come from the RESULT ROWS, not from the run's own columns.
+     The rows are the record of what happened and they are already loaded;
+     the run row's tallies are maintained by the live event stream, which a
+     finished run no longer replays — reading them left a completed run
+     showing "0 / 141 done, 141 pending" beside its real pass and fail
+     counts. Live events overwrite these as they arrive. */
+  const tally = (run.results || []).reduce((a, r) => {
+    a[r.status] = (a[r.status] || 0) + 1;
+    return a;
+  }, {});
+  const settled = Object.entries(tally).reduce(
+    (a, [k, v]) => a + (["QUEUED", "RUNNING"].includes(k) ? 0 : v), 0);
   const state = {
-    total: run.total || (run.results || []).length, done: 0,
-    passed: run.passed || 0, failed: run.failed || 0, skipped: run.skipped || 0,
-    errors: run.errors || 0, blocked: run.blocked || 0, running: null,
+    total: run.total || (run.results || []).length,
+    done: settled,
+    passed: tally.PASSED || 0, failed: tally.FAILED || 0,
+    skipped: tally.SKIPPED || 0, errors: tally.ERROR || 0,
+    blocked: tally.BLOCKED || 0, running: null,
   };
 
   /* ---- counters (cheap: 7 numbers, repainted at most once per frame) */
@@ -852,6 +866,43 @@ async function viewRun(runId, groupId) {
 
   renderCounters(); updateLogMeta();
 
+  /* ---- A FINISHED run never opens a stream.
+     Its results already arrived with GET /api/runs/<id>; nothing more can
+     ever be published. Streaming one anyway meant replaying ~2,900 structural
+     events on every visit, and — behind a tunnel, which drops an idle stream —
+     EventSource reconnected and replayed them again, and again. That is what
+     made a completed run's page hang. Its log is now fetched as text, once,
+     and only when asked for. */
+  if (finishedRun) {
+    logMeta.textContent = "run finished";
+    pauseBtn.hidden = true;
+    const loadBtn = document.createElement("button");
+    loadBtn.className = "ghost small";
+    loadBtn.textContent = "↓ Load log";
+    pauseBtn.parentNode.insertBefore(loadBtn, pauseBtn);
+    logEl.textContent = "The log is not streamed for a finished run. "
+      + "Load it, or take the full detail from Export.";
+    loadBtn.onclick = async () => {
+      loadBtn.disabled = true;
+      loadBtn.textContent = "Loading…";
+      try {
+        const res = await fetch(`/api/runs/${runId}/log?tail=4000`);
+        if (!res.ok) throw new Error(res.statusText);
+        const text = await res.text();
+        logEl.textContent = text;
+        logLines = text ? text.split("\n").length : 0;
+        updateLogMeta();
+        logEl.scrollTop = logEl.scrollHeight;
+        loadBtn.remove();
+      } catch (err) {
+        loadBtn.disabled = false;
+        loadBtn.textContent = "↓ Load log";
+        toast(err.message, { title: "Could not load the log", kind: "error" });
+      }
+    };
+    return;
+  }
+
   if (liveES) liveES.close();
   liveES = new EventSource(`/api/runs/${runId}/events`);
   const EVENTS = ["RUN_STARTED", "TEST_STARTED", "STEP_STARTED", "STEP_PASSED",
@@ -863,12 +914,32 @@ async function viewRun(runId, groupId) {
     queue.push([type, JSON.parse(e.data).payload]);
     schedule();
   }));
-  liveES.addEventListener("STREAM_END", () => { if (liveES) liveES.close(); });
+
+  /* Once the run reports completion the stream has nothing left to say, so
+     it is closed for good. Without this a tunnel-dropped connection would
+     reconnect into a fresh bootstrap replay — the same loop as above. */
+  let done = false;
+  const closeStream = () => {
+    done = true;
+    if (liveES) { liveES.close(); liveES = null; }
+  };
+  liveES.addEventListener("STREAM_END", closeStream);
+  liveES.addEventListener("RUN_COMPLETED", () => setTimeout(closeStream, 1500));
+
+  let reconnects = 0;
   liveES.onerror = () => {
-    // EventSource reconnects on its own; the bootstrap replay makes the
-    // reconnect cheap, so this only needs to say so.
-    if (liveES && liveES.readyState === EventSource.CONNECTING)
-      pushLog("… reconnecting to the event stream");
+    if (done) return closeStream();
+    if (liveES && liveES.readyState === EventSource.CONNECTING) {
+      // Give up rather than reconnect forever: each reconnect costs a full
+      // bootstrap replay, so a flapping link is worse than no stream at all.
+      if (++reconnects > 5) {
+        closeStream();
+        toast("Reload the page to resume following it.",
+          { title: "Lost the live connection", kind: "error", ms: 0 });
+        return;
+      }
+      pushLog(`… reconnecting to the event stream (${reconnects}/5)`);
+    }
     schedule();
   };
 }

@@ -8,13 +8,14 @@ refresh replays the full history and continues live from the same channel.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import (FileResponse, PlainTextResponse, Response,
-                               StreamingResponse)
+from fastapi.responses import (FileResponse, HTMLResponse, PlainTextResponse,
+                               Response, StreamingResponse)
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -241,6 +242,15 @@ async def api_events(run_id: str):
                    + json.dumps({"payload": {"dropped": dropped}})
                    + "\n\n")
 
+        if finished:
+            # The run was already over before this client connected. Nothing
+            # further can ever arrive, so end the stream now rather than
+            # holding it open: an idle SSE stream behind a tunnel gets
+            # dropped, and EventSource then reconnects and replays the whole
+            # bootstrap again, forever.
+            yield "event: STREAM_END\ndata: {}\n\n"
+            return
+
         idle_after_finish = 0
         while True:
             # Paged: one poll can never hand the browser more than
@@ -267,6 +277,22 @@ async def api_events(run_id: str):
     return StreamingResponse(gen(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache",
                                       "X-Accel-Buffering": "no"})
+
+
+@app.get("/api/runs/{run_id}/log")
+def api_run_log(run_id: str, tail: int = 2000):
+    """The run's log as plain text, newest `tail` lines.
+
+    A finished run's page needs the log as TEXT, not as a replay: rebuilding
+    it from the event stream means shipping thousands of JSON objects the
+    browser must parse and apply one by one. This ships the lines already
+    rendered, and only when the reader asks for them.
+    """
+    if not store.run(run_id):
+        raise HTTPException(404, "Run not found")
+    lines = store.log_lines(run_id, tail)
+    return PlainTextResponse("\n".join(lines),
+                             headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/results/{result_id}")
@@ -372,6 +398,40 @@ def api_export_result_md(result_id: str):
 app.mount("/static", StaticFiles(directory=str(FRONTEND)), name="static")
 
 
+def _asset_version(*names: str) -> str:
+    """A short content hash over the frontend assets.
+
+    The site is published through Cloudflare, which caches ``.js`` and
+    ``.css`` by default — measured: a deploy served the previous app.js for
+    97 minutes (``cf-cache-status: HIT``, ``Age: 5838``), so the browser ran
+    old code against a new backend and nobody could tell from the page.
+
+    Stamping the URL with a content hash makes every deploy a NEW url. The
+    CDN then caches correctly instead of wrongly, and no cache purge is
+    needed. Hashing content rather than mtime means an unchanged file keeps
+    its url across restarts and rebuilds.
+    """
+    digest = hashlib.sha256()
+    for name in names:
+        path = FRONTEND / name
+        if path.exists():
+            digest.update(path.read_bytes())
+    return digest.hexdigest()[:12]
+
+
 @app.get("/")
 def index():
-    return FileResponse(FRONTEND / "index.html")
+    """index.html, with the asset urls version-stamped, never cached.
+
+    The HTML must stay uncached or the browser would keep asking for the
+    previous version's assets — the stamp only helps if the document
+    carrying it is fresh.
+    """
+    html = (FRONTEND / "index.html").read_text(encoding="utf-8")
+    version = _asset_version("app.js", "style.css")
+    html = (html.replace("/static/app.js", f"/static/app.js?v={version}")
+                .replace("/static/style.css", f"/static/style.css?v={version}"))
+    return HTMLResponse(html, headers={
+        "Cache-Control": "no-store, must-revalidate",
+        "Pragma": "no-cache",
+    })
