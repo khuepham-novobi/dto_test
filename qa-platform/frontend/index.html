@@ -1,21 +1,28 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Odoo Regression Test Runner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap">
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
 <header class="topbar">
-  <a href="#/" class="brand">⚙ ODOO REGRESSION TEST RUNNER</a>
-  <nav>
-    <a href="#/">Features</a>
-    <a href="#/tests">Automated tests</a>
-    <a href="#/runs">Runs</a>
+  <a href="#/" class="brand"><span class="logo">◇</span> Regression Runner</a>
+  <nav id="nav">
+    <a href="#/" data-nav="">Workflows</a>
+    <a href="#/tests" data-nav="tests">Automated tests</a>
+    <a href="#/runs" data-nav="runs">Runs</a>
   </nav>
+  <div class="spacer"></div>
+  <button class="iconbtn" id="themetoggle" title="Toggle light / dark">◐</button>
 </header>
-<main id="app"><div class="loading">Loading…</div></main>
+<main id="app"><div class="loading">Loading</div></main>
+<div id="toasts"></div>
 <script src="/static/app.js"></script>
 </body>
 </html>

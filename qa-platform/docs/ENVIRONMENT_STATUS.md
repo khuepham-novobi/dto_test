@@ -189,3 +189,54 @@ Nothing was written to `dto_17`. Re-run once the server is back:
 ```
 venv\Scripts\python.exe scriptsun_readonly_subset.py
 ```
+
+---
+
+# Environment finding — Odoo 19 target `d1v19`
+
+## Missing external ID `product.product_category_all` (restore `d1systems-uat-37509933`)
+
+Measured on 2026-09-05, on `d1v19` restored from
+`d1systems-uat-37509933_2026-09-05_025809_test_nofs.zip`:
+
+```sql
+SELECT count(*) FROM ir_model_data
+ WHERE module='product' AND name='product_category_all';     -- 0
+SELECT count(*) FROM ir_default d JOIN ir_model_fields f ON f.id=d.field_id
+ WHERE f.model='product.template' AND f.name='categ_id';     -- 0
+```
+
+The category ROW is present (`product_category.id = 1`, "All"); only its
+`ir_model_data` row is gone.
+
+**Why it matters.** `product.template.categ_id` is required, and core's
+default resolves it through
+`env.ref('product.product_category_all', raise_if_not_found=False)`. With the
+external ID absent that default returns nothing, so **every product created
+without an explicit category fails**:
+
+```
+The operation cannot be completed: Missing required value for the field
+'Product Category' (categ_id).
+```
+
+That is a UI-visible defect on this database, not only a test-harness one: a
+user creating a product without picking a category gets the same error.
+
+**Effect on the suite.** The previous restore (`...-37139151`) still had the
+external ID, so this appeared as 29 tests going PASSED -> ERROR across
+DATAONE-WF-002 and DATAONE-WF-013 on a database whose business data is
+otherwise identical.
+
+**What was changed here, and what was not.** The fixtures now pass an
+explicit `categ_id` (`framework/qa_fixtures.with_categ`) — a fixture must not
+depend on an ambient default it does not control. **The database was left
+alone**: restoring the external ID would mask a real difference between the
+two UAT snapshots, and whether to restore it is the environment owner's call.
+
+To restore it, if that is wanted:
+
+```sql
+INSERT INTO ir_model_data (module, name, model, res_id, noupdate)
+VALUES ('product', 'product_category_all', 'product.category', 1, true);
+```

@@ -56,7 +56,7 @@ import uuid
 from adapters.base import OdooRPCError
 from framework.fg_common import m2o_id, make_trace  # noqa: F401 — re-exported
 from framework.qa_fixtures import (require_mail_offline,  # noqa: F401
-                                   sweep_model, sweep_products)
+                                   sweep_model, sweep_products, with_categ)
 
 WORKFLOW = "DATAONE-WF-002"
 WORKFLOW_NAME = "Quotation → sales order confirmation"
@@ -184,7 +184,7 @@ def ensure_product(ctx, label="Item", price=100.0, storable=True) -> int:
         values.update(ctx.adapter.storable_product_values())
     else:
         values["type"] = "service"
-    tmpl_id = rpc.create("product.template", values)
+    tmpl_id = rpc.create("product.template", with_categ(rpc, values))
     variant = rpc.search_read("product.product",
                               [("product_tmpl_id", "=", tmpl_id)],
                               ["id"], limit=1)

@@ -56,7 +56,7 @@ from framework.dto_fixtures import (create_invoice, deliver_order,  # noqa: F401
                                     order_invoices, set_stock)
 from framework.fg_common import m2o_id, make_trace  # noqa: F401
 from framework.qa_fixtures import (require_mail_offline,  # noqa: F401
-                                   sweep_model, sweep_products)
+                                   sweep_model, sweep_products, with_categ)
 
 WORKFLOW = "DATAONE-WF-013"
 WORKFLOW_NAME = "Customer Invoice Posting: COGS and Revenue Recognition"
@@ -326,7 +326,7 @@ def ensure_product(ctx, label="Item", price=10.0, cost=9.0,
     values.update(ctx.adapter.storable_product_values())
     if categ_id:
         values["categ_id"] = categ_id
-    tmpl_id = rpc.create("product.template", values)
+    tmpl_id = rpc.create("product.template", with_categ(rpc, values))
     variant = rpc.search_read("product.product",
                               [("product_tmpl_id", "=", tmpl_id)],
                               ["id"], limit=1)

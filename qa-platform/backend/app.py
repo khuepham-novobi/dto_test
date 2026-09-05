@@ -13,10 +13,12 @@ import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import (FileResponse, PlainTextResponse, Response,
+                               StreamingResponse)
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from backend import exporters
 from backend.config import ROOT, load_environments, settings
 from backend.runner import ChainedExecutor, RunExecutor, cancel_run
 from backend.store import Store
@@ -223,11 +225,29 @@ async def api_events(run_id: str):
         raise HTTPException(404, "Run not found")
 
     async def gen():
-        last_seq = 0
+        # Bootstrap: replay every STRUCTURAL event but only the tail of the
+        # LOG firehose. A 141-test run persists ~23,000 events, 98% of them
+        # LOG; a client joining or refreshing mid-run used to receive all of
+        # them in one burst, which is what exhausted the tab.
+        events, last_seq, dropped = await asyncio.to_thread(
+            store.events_bootstrap, run_id, 200)
         finished = False
+        for ev in events:
+            if ev["type"] == "RUN_COMPLETED":
+                finished = True
+            yield f"event: {ev['type']}\ndata: {json.dumps(ev)}\n\n"
+        if dropped:
+            yield ("event: LOG_TRUNCATED\ndata: "
+                   + json.dumps({"payload": {"dropped": dropped}})
+                   + "\n\n")
+
         idle_after_finish = 0
         while True:
-            events = await asyncio.to_thread(store.events_since, run_id, last_seq)
+            # Paged: one poll can never hand the browser more than
+            # Store.EVENT_PAGE events, so a burst is spread across frames
+            # instead of arriving as one unbreakable chunk.
+            events = await asyncio.to_thread(
+                store.events_since, run_id, last_seq)
             for ev in events:
                 last_seq = ev["seq"]
                 if ev["type"] in ("RUN_COMPLETED",):
@@ -239,7 +259,10 @@ async def api_events(run_id: str):
                     yield "event: STREAM_END\ndata: {}\n\n"
                     return
             yield ": keepalive\n\n"
-            await asyncio.sleep(0.4)
+            # A full page means more is waiting: drain it without the idle
+            # delay, so a backlog clears quickly but still page by page.
+            await asyncio.sleep(
+                0 if len(events) >= store.EVENT_PAGE else 0.4)
 
     return StreamingResponse(gen(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache",
@@ -273,6 +296,76 @@ def api_compare(group_id: str):
     if not cmp_:
         raise HTTPException(404, "Comparison group not found")
     return cmp_
+
+
+# ----------------------------------------------------------------- export
+XLSX_MEDIA = ("application/vnd.openxmlformats-officedocument"
+              ".spreadsheetml.sheet")
+
+
+def _stamp() -> str:
+    from datetime import datetime
+    return datetime.now().strftime("%Y%m%d-%H%M")
+
+
+def _xlsx(payload: bytes, filename: str) -> Response:
+    return Response(
+        content=payload, media_type=XLSX_MEDIA,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+def _markdown(text: str, filename: str) -> PlainTextResponse:
+    return PlainTextResponse(
+        text, media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@app.get("/api/export/testcases.xlsx")
+def api_export_testcases(all: bool = False):
+    """The whole test-case registry as a workbook.
+
+    Default is the in-scope wave, matching the dashboard; all=true adds every
+    workflow the Excel knowledge base defines.
+    """
+    payload = exporters.testcases_workbook(store, in_scope_only=not all)
+    scope = "all" if all else "in-scope"
+    return _xlsx(payload, f"DataOne-TestCases-{scope}-{_stamp()}.xlsx")
+
+
+@app.get("/api/runs/{run_id}/export.xlsx")
+def api_export_run_xlsx(run_id: str):
+    """One run in full: summary, results, every step, every assertion."""
+    try:
+        payload = exporters.run_workbook(store, run_id)
+    except KeyError:
+        raise HTTPException(404, "Run not found")
+    return _xlsx(payload, f"{run_id}-detail-{_stamp()}.xlsx")
+
+
+@app.get("/api/runs/{run_id}/export.md")
+def api_export_run_md(run_id: str, only: str | None = None):
+    """Detailed Markdown for every case in a run.
+
+    `only=FAILED,ERROR` narrows it to what needs triage — the same shape the
+    mailed FAILURES.md uses, so a reader can act on either.
+    """
+    try:
+        text = exporters.run_markdown(store, run_id, only=only)
+    except KeyError:
+        raise HTTPException(404, "Run not found")
+    suffix = "-" + only.replace(",", "-").lower() if only else ""
+    return _markdown(text, f"{run_id}{suffix}-{_stamp()}.md")
+
+
+@app.get("/api/results/{result_id}/export.md")
+def api_export_result_md(result_id: str):
+    """One case, fully expanded — steps, assertions, error, artifacts."""
+    try:
+        text = exporters.result_markdown(store, result_id)
+    except KeyError:
+        raise HTTPException(404, "Result not found")
+    res = store.result(result_id)
+    return _markdown(text, f"{res['test_id']}-{result_id}.md")
 
 
 # ---------------------------------------------------------------- frontend

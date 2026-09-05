@@ -14,7 +14,13 @@ import time
 import uuid
 from pathlib import Path
 
-_TC_ID_RE = re.compile(r"TC-[A-Z]+-\d+")
+#: Workbook test-case ids as they are actually written: a project prefix, a
+#: hyphen, then TC and the number — "DATAONE-TC057". The previous pattern
+#: (TC-[A-Z]+-\d+) described an id shape the workbook never used, so it
+#: matched nothing: every execution fell out of the index and the dashboard
+#: reported "not run" for test cases that had, in fact, run. The trailing
+#: boundary keeps TC5 from matching inside TC57.
+_TC_ID_RE = re.compile(r"[A-Z][A-Z0-9]*-TC\d+(?![\dA-Za-z])")
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (
@@ -241,13 +247,59 @@ class Store:
         return seq
 
     # -------------------------------------------------------------- reads
-    def events_since(self, run_id: str, after_seq: int) -> list[dict]:
+    #: Cap on how many events one SSE poll may hand to the browser. A run
+    #: emits ~23,000 events, 98% of them LOG; without a cap a single poll
+    #: after a stall returns the whole backlog in one message burst, which is
+    #: what made the tab run out of memory.
+    EVENT_PAGE = 400
+
+    def events_since(self, run_id: str, after_seq: int,
+                     limit: int | None = None) -> list[dict]:
         with self._conn() as con:
             rows = con.execute(
                 "SELECT seq, ts, type, payload FROM events "
-                "WHERE run_id=? AND seq>? ORDER BY seq", (run_id, after_seq))
+                "WHERE run_id=? AND seq>? ORDER BY seq LIMIT ?",
+                (run_id, after_seq, limit or self.EVENT_PAGE))
             return [{"seq": r["seq"], "ts": r["ts"], "type": r["type"],
                      "payload": json.loads(r["payload"])} for r in rows]
+
+    def events_bootstrap(self, run_id: str, log_tail: int = 200) -> tuple:
+        """Initial SSE payload for a client joining a run already in flight.
+
+        Every STRUCTURAL event is replayed — those build the result table and
+        the counters, so dropping one would leave the page wrong. LOG events
+        are pure narration and there are tens of thousands of them, so only
+        the most recent `log_tail` are replayed. Returns (events, last_seq,
+        dropped_log_count) with `last_seq` set to the true head so the live
+        poll continues from there rather than re-reading the backlog.
+        """
+        with self._conn() as con:
+            head = con.execute(
+                "SELECT COALESCE(MAX(seq), 0) AS s FROM events WHERE run_id=?",
+                (run_id,)).fetchone()["s"]
+            # Every read is bounded by the head measured above. The run is
+            # still writing, so without that bound an event appended between
+            # the two queries would be sent here AND again by the first poll
+            # (which resumes at `head`), delivering it twice.
+            structural = con.execute(
+                "SELECT seq, ts, type, payload FROM events "
+                "WHERE run_id=? AND seq<=? AND type != 'LOG' ORDER BY seq",
+                (run_id, head))
+            events = [dict(r) for r in structural]
+            total_logs = con.execute(
+                "SELECT COUNT(*) AS n FROM events "
+                "WHERE run_id=? AND seq<=? AND type = 'LOG'",
+                (run_id, head)).fetchone()["n"]
+            tail = con.execute(
+                "SELECT seq, ts, type, payload FROM events "
+                "WHERE run_id=? AND seq<=? AND type = 'LOG' "
+                "ORDER BY seq DESC LIMIT ?",
+                (run_id, head, log_tail))
+            events += [dict(r) for r in tail]
+        events.sort(key=lambda e: e["seq"])
+        for e in events:
+            e["payload"] = json.loads(e["payload"])
+        return events, head, max(0, total_logs - log_tail)
 
     def run(self, run_id: str) -> dict | None:
         with self._conn() as con:
