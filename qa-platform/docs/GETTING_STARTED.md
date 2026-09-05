@@ -169,6 +169,29 @@ Open **http://127.0.0.1:8000**.
    `REGRESSION_CANDIDATE` (needs failure triage before anyone calls it a
    regression), `FIXED`, `SAME_FAILURE`, `BLOCKED`.
 
+8. **Export** — every page with an Export button writes a file straight from
+   the persisted rows, so an export and the dashboard can never disagree.
+
+| Where | Button | File | What is in it |
+|---|---|---|---|
+| Workflows / workflow page | Export | `DataOne-TestCases-in-scope-*.xlsx` | Every in-scope test case, one row each, plus a Summary tab and a per-workflow rollup |
+| Workflows / workflow page | Export | `DataOne-TestCases-all-*.xlsx` | The same for every workflow in the workbook, in scope or not |
+| Run page | Export | `RUN-*-detail-*.xlsx` | 4 tabs: Summary, Results, Steps, Assertions — one row per step and per assertion |
+| Run page | Export | `RUN-*.md` | Detailed Markdown, one section per case: steps, assertions, expected vs actual, error, artifacts |
+| Run page | Export | `RUN-*-failed-error-*.md` | The same, filtered to FAILED and ERROR — the file to hand to Claude Code |
+| Run page | Export | `RUN-*-blocked-*.md` | BLOCKED cases with the recorded block reason |
+| Result page, result row, TC history | `.md` | `TEST-*-RES-*.md` | One case, fully expanded |
+| Run history | `.xlsx` | `RUN-*-detail-*.xlsx` | The full run workbook, without opening the run |
+
+The same files are available directly:
+
+```
+GET /api/export/testcases.xlsx[?all=true]
+GET /api/runs/<run_id>/export.xlsx
+GET /api/runs/<run_id>/export.md[?only=FAILED,ERROR]
+GET /api/results/<result_id>/export.md
+```
+
 Reports are regenerated from the same persisted rows with:
 
 ```powershell

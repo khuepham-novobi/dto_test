@@ -45,6 +45,28 @@ class OdooRPCError(RuntimeError):
     pass
 
 
+def _one_line(message) -> str:
+    """Collapse a server fault to one line WITHOUT losing the diagnosis.
+
+    Odoo writes validation errors most-informative-first::
+
+        The operation cannot be completed: Missing required value for the
+        field 'Product Category' (categ_id).
+        Model: 'Product' (product.template)
+        - create/update: a mandatory field is not set
+        - delete: another model requires the record being deleted, ...
+
+    This used to keep ``splitlines()[-1]``, so every one of those errors was
+    reported as "delete: another model requires the record being deleted" —
+    a line that is generic boilerplate and, for a failing *create*, actively
+    misleading. Keeping the whole message costs nothing and is the difference
+    between a triage reader diagnosing the fault and chasing the wrong one.
+    """
+    text = " | ".join(part.strip() for part in
+                      str(message).strip().splitlines() if part.strip())
+    return text[:1500] + (" …" if len(text) > 1500 else "")
+
+
 class OdooRPC:
     """Thin, dependency-free JSON-RPC client for Odoo 8..19."""
 
@@ -71,7 +93,7 @@ class OdooRPC:
             data = err.get("data") or {}
             message = (data.get("message") or err.get("message")
                        or "unknown RPC error")
-            raise OdooRPCError(str(message).strip().splitlines()[-1])
+            raise OdooRPCError(_one_line(message))
         return reply.get("result")
 
     # -- session ---------------------------------------------------------

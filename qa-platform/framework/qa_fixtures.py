@@ -122,3 +122,63 @@ def require_mail_offline(ctx):
             "hard-coded d1systems.com recipient list. Deactivate every mail "
             "server on the QA clone before running it — the platform will "
             "not risk delivering real email.")
+
+
+#: Cached per (base_url, db) — the lookup costs two RPC round trips and every
+#: fixture in every suite needs the same answer.
+_CATEG_CACHE: dict = {}
+
+
+def default_categ_id(rpc: OdooRPC) -> int | None:
+    """A product category id that is safe to create a product with.
+
+    ``product.template.categ_id`` is REQUIRED. Core's default reads
+    ``product.product_category_all`` through ``env.ref(...,
+    raise_if_not_found=False)``, so when that external id is absent the
+    default silently resolves to nothing and every product create fails with
+
+        Missing required value for the field 'Product Category' (categ_id)
+
+    Measured on d1v19 restored from d1systems-uat-37509933: the category row
+    ("All", id 1) is present but its ir_model_data row is gone, so the xmlid
+    resolves to nothing. The previous restore still had it — which is why the
+    whole of WF-002 went from PASSED to ERROR on a database with identical
+    business data.
+
+    A fixture must not depend on an ambient default it does not control, so
+    this resolves a category explicitly and every caller passes it. Returns
+    None only when the database has no product category at all, in which case
+    the caller should let the server raise rather than invent one.
+    """
+    env = getattr(rpc, "env", None)
+    key = (getattr(env, "base_url", ""), getattr(env, "db", ""))
+    if key in _CATEG_CACHE:
+        return _CATEG_CACHE[key]
+
+    categ_id = None
+    ref = rpc.ref("product.product_category_all")
+    if ref and rpc.search("product.category", [("id", "=", ref)]):
+        categ_id = ref
+    if categ_id is None:
+        # Fall back to the lowest-id root category, which on a stock Odoo is
+        # the same "All" record the xmlid would have pointed at.
+        roots = rpc.search_read("product.category", [("parent_id", "=", False)],
+                                ["id"], order="id", limit=1)
+        if roots:
+            categ_id = roots[0]["id"]
+    if categ_id is None:
+        any_categ = rpc.search_read("product.category", [], ["id"],
+                                    order="id", limit=1)
+        categ_id = any_categ[0]["id"] if any_categ else None
+
+    _CATEG_CACHE[key] = categ_id
+    return categ_id
+
+
+def with_categ(rpc: OdooRPC, values: dict) -> dict:
+    """Add an explicit ``categ_id`` unless the caller already chose one."""
+    if not values.get("categ_id"):
+        categ_id = default_categ_id(rpc)
+        if categ_id:
+            values["categ_id"] = categ_id
+    return values

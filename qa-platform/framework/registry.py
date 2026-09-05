@@ -69,8 +69,19 @@ def reload() -> list[TestCaseDef]:
     """
     import sys
     _REGISTRY.clear()
-    for name in [n for n in sys.modules
-                 if n == "tests" or n.startswith("tests.")]:
+    # Suites import their shared helpers from framework.* (fixtures, common
+    # SQL, reconciliation). Dropping only tests.* left the OLD framework
+    # module objects in sys.modules, so a helper added since startup was
+    # invisible and the re-import died with ImportError — the reload appeared
+    # to work for test edits and silently not for helper edits.
+    # framework.registry itself is deliberately kept: it owns _REGISTRY and
+    # the decorator, and reloading it mid-call would orphan both.
+    stale = [n for n in sys.modules
+             if n == "tests" or n.startswith("tests.")
+             or ((n == "framework" or n.startswith("framework."))
+                 and n != "framework.registry")
+             or n == "adapters" or n.startswith("adapters.")]
+    for name in stale:
         del sys.modules[name]
     importlib.invalidate_caches()
     return discover()
