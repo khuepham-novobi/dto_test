@@ -193,8 +193,20 @@ const rollup = (m, keys) => keys.map(k =>
   m[k] ? `<span class="mini st-${esc(k).replace(/ /g, "")}">${m[k]} ${esc(k)}</span>` : ""
 ).join("") || "<span class='muted small'>not run</span>";
 
+/* The dashboard defaults to the in-scope wave, which is a FILTERED view of
+   the workbook: 9 of 28 workflows, 156 of 510 test cases. Presenting 156 as
+   "test cases" with no control and no label read as the whole workbook, and
+   the other 354 were unreachable from the UI even though /api/features
+   already served them. The scope is a visible, remembered choice now. */
+const SCOPE_KEY = "qa.scope";
+const scopeGet = () => localStorage.getItem(SCOPE_KEY) === "all" ? "all" : "wave";
+const scopeSet = v => localStorage.setItem(SCOPE_KEY, v);
+
 async function viewFeatures() {
-  const { features } = await api("/api/features");
+  const scope = scopeGet();
+  const showAll = scope === "all";
+  const { features } = await api(
+    "/api/features" + (showAll ? "?all=true" : ""));
   const sum = key => features.reduce((a, f) => a + (f[key] || 0), 0);
   const sumMap = key => features.reduce((a, f) => {
     Object.entries(f[key] || {}).forEach(([k, v]) => a[k] = (a[k] || 0) + v);
@@ -208,12 +220,18 @@ async function viewFeatures() {
     <div class="pagehead">
       <div class="grow">
         <h1>Workflows — DataOne 17 → 19</h1>
-        <div class="sub muted small">Workbook v1.0 · registry synced read-only from Excel</div>
+        <div class="sub muted small">Workbook v1.0 · registry synced read-only from Excel
+          · showing ${showAll ? "every workflow" : "the in-scope wave"}</div>
       </div>
     </div>
 
     <div class="toolbar">
       ${await envPicker()}
+      <label class="field"><span>Scope</span>
+        <span class="segmented" id="scopepick">
+          <button data-scope="wave"${showAll ? "" : " class=on"}>In-scope wave</button>
+          <button data-scope="all"${showAll ? " class=on" : ""}>All workflows</button>
+        </span></label>
       <div class="field search"><span>Filter</span>
         <input type="search" id="fgsearch" placeholder="workflow, name, module…"></div>
       <div class="grow"></div>
@@ -228,7 +246,8 @@ async function viewFeatures() {
     </div>
 
     <div class="stats">
-      <div class="stat brand"><b>${sum("total")}</b><span>test cases</span></div>
+      <div class="stat brand"><b>${sum("total")}</b>
+        <span>${showAll ? "test cases (all)" : "test cases in scope"}</span></div>
       <div class="stat"><b>${sum("automatable")}</b><span>automatable</span></div>
       <div class="stat run"><b>${sum("automated")}</b><span>automated</span></div>
       <div class="stat pass"><b>${v19.PASS || 0}</b><span>v19 pass</span></div>
@@ -270,10 +289,20 @@ async function viewFeatures() {
     <p class="footnote">Counts come from the test-case registry
       (<span class="mono">data/test_registry.json</span>, synced read-only from the Excel
       workbook) joined with persisted execution results. Click a row for its test cases;
-      Run executes that workflow's registered automation against the selected target.</p>`;
+      Run executes that workflow's registered automation against the selected target.
+      <br><b>Scope:</b> ${showAll
+        ? `every workflow the workbook defines. Only the in-scope wave has
+           registered automation — the rest show their workbook test cases with
+           no execution history.`
+        : `the in-scope wave only. The workbook defines more; switch scope to
+           <b>All workflows</b> to see them.`}</p>`;
 
   bindEnvPicker(); bindMenus();
   bindFilter("fgsearch", ".fgrow", "fgcount");
+  document.querySelectorAll("#scopepick button").forEach(b => b.onclick = () => {
+    scopeSet(b.dataset.scope);
+    viewFeatures();
+  });
   document.getElementById("runAllFg").onclick = e =>
     startRun({ scope: "in_scope", label: "In-scope workflow regression suite" },
       e.currentTarget);
@@ -286,7 +315,12 @@ async function viewFeatures() {
 /* ---------------------------------------------------- one workflow view */
 async function viewFeature(fgId) {
   const [{ test_cases }, { features }] = await Promise.all([
-    api(`/api/testcases?feature=${encodeURIComponent(fgId)}`), api("/api/features")]);
+    // all=true on BOTH: you navigated to one named workflow, so its cases
+    // belong on the page whether or not the current wave covers it. Without
+    // it an out-of-scope workflow rendered an empty table under a blank
+    // heading, because the default filter is in-scope-only.
+    api(`/api/testcases?feature=${encodeURIComponent(fgId)}&all=true`),
+    api("/api/features?all=true")]);
   const f = features.find(x => x.feature_id === fgId) || {};
 
   app.innerHTML = `
