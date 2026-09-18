@@ -89,7 +89,9 @@ import uuid
 
 from adapters.base import OdooRPCError
 from framework.fg_common import m2o_id, make_trace  # noqa: F401
-from framework.qa_fixtures import sweep_model, sweep_products, with_categ  # noqa: F401
+from framework.qa_fixtures import (ensure_postable_bill,  # noqa: F401
+                                   sweep_model, sweep_products,
+                                   with_categ)
 
 WORKFLOW = "DATAONE-WF-019"
 WORKFLOW_NAME = "Vendor Payment Import from Workday"
@@ -418,10 +420,11 @@ def make_bill(ctx, vendor_id, amount, ref_suffix, label="bill",
             "price_unit": amount,
             "tax_ids": [(6, 0, [])],
         })],
-        "attachment_ids": [(0, 0, {
-            "name": fx(f"{MARK} {label}.pdf"),
-            "datas": base64.b64encode(b"%PDF-1.4 WF019 QA").decode()})],
     })
+    # NOT attachment_ids at create: the inverse is res_id and res_model is
+    # only a domain term, so the row lands outside the field's own domain and
+    # have_attachment stays False — which dto_account._post refuses.
+    ensure_postable_bill(ctx, move_id, name=fx(f"{MARK} {label}.pdf"))
     rpc.call("account.move", "action_post", [move_id])
     row = rpc.read("account.move", [move_id],
                    ["state", "amount_residual", "amount_total", "ref"])[0]

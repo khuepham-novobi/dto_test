@@ -1,6 +1,6 @@
 # DATAONE-WF-003 Report — Quotation revision
 
-Generated 2026-09-10 06:14 by `scripts/gen_reports.py` from persisted execution results (`data/results.db`) and the workbook-synced registry. Expected results are the workbook's, verbatim.
+Generated 2026-09-18 14:23 by `scripts/gen_reports.py` from persisted execution results (`data/results.db`) and the workbook-synced registry. Expected results are the workbook's, verbatim.
 
 ## Counts
 
@@ -39,7 +39,7 @@ Generated 2026-09-10 06:14 by `scripts/gen_reports.py` from persisted execution 
 
 - **DATAONE-TC014** [Odoo 19 → FAIL / ASSERTION] modules still using other removed APIs: expected {}, got {'base_tier_validation': ['models/tier_validation.py:272', 'tests/common.py:85', 'tests/test_tier_validation.py:598', 'tests/test_tier_validation.py:653', 'tests/test_tier_validation.py:709', 'tests/test
 - **DATAONE-TC014** [Odoo 17 → FAIL / ASSERTION] modules still using removed odoo.api members: expected {}, got {'base_revision': ['models/base_revision.py:66']}
-- **DATAONE-TC095** [Odoo 19 → FAIL / ASSERTION] revision chatter carries the notice: expected True, got "2 message(s); looking for 'New revision created: S06309-01'; bodies=['Sales Order created', 'New revision created from: S06309']"
+- **DATAONE-TC095** [Odoo 19 → FAIL / ASSERTION] revision chatter carries the notice: expected True, got "2 message(s); looking for 'New revision created: S06406-01'; bodies=['Sales Order created', 'New revision created from: S06406']"
 - **DATAONE-TC095** [Odoo 17 → ERROR / AUTOMATION_ERROR] OdooRPCError: account.analytic.plan.search failed: Contact your administrator to request access if necessary.
 - **DATAONE-TC096** [Odoo 19 → ERROR / AUTOMATION_ERROR] OdooRPCError: product.template.create failed: - delete: another model requires the record being deleted, you can archive it instead
 - **DATAONE-TC096** [Odoo 17 → ERROR / AUTOMATION_ERROR] OdooRPCError: account.analytic.plan.search failed: Contact your administrator to request access if necessary.

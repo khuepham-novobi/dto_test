@@ -47,7 +47,8 @@ EXPECTED v19 OUTCOME: the same. ``move_type``, ``journal_id.type`` and
 because the domain raises.
 """
 from framework.registry import test_case
-from tests.wf017.common import (ERR_BAD_FOLDER, ERR_EMPTY_SELECTION,
+from tests.wf017.common import (ensure_postable_bill,  # noqa: F401
+                                ERR_BAD_FOLDER, ERR_EMPTY_SELECTION,
                                 ERR_IS_BILL, ERR_NOTHING_TO_EXPORT,
                                 ERR_NOT_POSTED, ERR_NO_TEMPLATE,
                                 EXPORT_CRON_XMLID,
@@ -150,10 +151,10 @@ def test_tc307(ctx):
                 "quantity": 1.0, "price_unit": 100.0,
                 "account_id": debit_account["id"],
                 "tax_ids": [(6, 0, [])]})],
-            "attachment_ids": [(0, 0, {
-                "name": fx(f"{MARK} B1.pdf"),
-                "datas": "JVBERi0xLjQK"})],
         })
+        # res_model is only a domain term on attachment_ids, so the One2many
+        # route creates nothing the field can see and the bill cannot post.
+        ensure_postable_bill(ctx, b1, name=fx(f"{MARK} B1.pdf"))
         rpc.call("account.move", "action_post", [b1])
         fixtures = {"N-1": n1, "D-1": d1, "E-1": e1, "B-1": b1}
         if k1:
@@ -819,10 +820,8 @@ def test_tc315(ctx):
                     "quantity": 1.0, "price_unit": 100.0,
                     "account_id": debit_account["id"],
                     "tax_ids": [(6, 0, [])]})],
-                "attachment_ids": [(0, 0, {
-                    "name": fx(f"{MARK} V3.pdf"),
-                    "datas": "JVBERi0xLjQK"})],
             })
+            ensure_postable_bill(ctx, v3, name=fx(f"{MARK} V3.pdf"))
             rpc.call("account.move", "action_post", [v3])
             ctx.log(f"V-1={v1} (posted entry), V-2={v2} (draft), "
                     f"V-3={v3} (posted bill)")

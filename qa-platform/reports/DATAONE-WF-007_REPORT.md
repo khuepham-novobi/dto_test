@@ -1,6 +1,6 @@
 # DATAONE-WF-007 Report — MO Completion, Serial-Number Generation & Labelling
 
-Generated 2026-09-10 06:14 by `scripts/gen_reports.py` from persisted execution results (`data/results.db`) and the workbook-synced registry. Expected results are the workbook's, verbatim.
+Generated 2026-09-18 14:23 by `scripts/gen_reports.py` from persisted execution results (`data/results.db`) and the workbook-synced registry. Expected results are the workbook's, verbatim.
 
 ## Counts
 
@@ -48,5 +48,5 @@ Generated 2026-09-10 06:14 by `scripts/gen_reports.py` from persisted execution 
 
 ## Failure notes (triage input)
 
-- **DATAONE-TC109** [Odoo 19 → FAIL / ASSERTION] still no producing lot: expected [], got [126816]
+- **DATAONE-TC109** [Odoo 19 → FAIL / ASSERTION] still no producing lot: expected [], got [126824]
 - **DATAONE-TC111** [Odoo 19 → FAIL / ASSERTION] state: expected 'done', got 'to_close'

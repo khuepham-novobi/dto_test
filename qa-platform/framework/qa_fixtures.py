@@ -182,3 +182,58 @@ def with_categ(rpc: OdooRPC, values: dict) -> dict:
         if categ_id:
             values["categ_id"] = categ_id
     return values
+
+
+#: A minimal valid PDF, base64 — enough for ir.attachment; nothing reads it.
+_PDF_B64 = "JVBERi0xLjQgUUEgZml4dHVyZQo="
+
+
+def attach_to_record(rpc: OdooRPC, model: str, res_id: int,
+                     name: str = "qa-fixture.pdf",
+                     datas: str = _PDF_B64) -> int:
+    """Attach a file to a record so that ``<model>.attachment_ids`` sees it.
+
+    The attachment MUST be created directly, with ``res_model`` set. Writing
+    the One2many instead — ``move.write({'attachment_ids': [(0, 0, vals)]})``
+    — does not work: ``account.move.attachment_ids`` is
+
+        One2many('ir.attachment', 'res_id',
+                 domain=[('res_model', '=', 'account.move')])
+
+    so the ORM fills the inverse ``res_id`` but never ``res_model``, which is
+    only a domain term. Measured on d1v19 (Odoo 19): after that write,
+    ``attachment_ids`` reads back ``[]``, ``have_attachment`` stays False,
+    and the attachment row cannot be found by name at all. Creating it with
+    ``res_model`` set gives ``have_attachment=True`` on the same move.
+
+    This matters because ``dto_account.account.move._post`` refuses any
+    ``in_invoice`` whose ``have_attachment`` is False, so a fixture that
+    attaches the wrong way cannot post a vendor bill — it fails with
+    "The Vendor Bill requires an attachment before posting" and every
+    assertion behind it never runs.
+    """
+    return rpc.create("ir.attachment", {
+        "name": name, "datas": datas,
+        "res_model": model, "res_id": res_id})
+
+
+def ensure_postable_bill(ctx, move_id: int, name: str = "qa-fixture.pdf"):
+    """Attach to a vendor bill and PROVE the gate will let it post.
+
+    Verified rather than assumed: a silently missing attachment turns every
+    later assertion in a WF-017/018/019 case into an error about posting,
+    which reads as a product defect and is not one.
+    """
+    rpc = ctx.adapter.rpc
+    row = rpc.read("account.move", [move_id], ["have_attachment"])[0]
+    if not row["have_attachment"]:
+        attach_to_record(rpc, "account.move", move_id, name=name)
+        row = rpc.read("account.move", [move_id], ["have_attachment"])[0]
+    if not row["have_attachment"]:
+        ctx.blocked(
+            f"Fixture bill {move_id} still reports have_attachment=False "
+            f"after an ir.attachment was created against it. "
+            f"dto_account.account.move._post refuses to post an in_invoice "
+            f"in that state, so this case cannot reach the behaviour it "
+            f"tests. This is a fixture problem, not a product finding.")
+    return move_id

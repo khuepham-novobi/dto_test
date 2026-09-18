@@ -121,7 +121,9 @@ import uuid
 
 from adapters.base import OdooRPCError
 from framework.fg_common import form_arch, list_tag, m2o_id, make_trace  # noqa: F401
-from framework.qa_fixtures import sweep_model, sweep_products, with_categ  # noqa: F401
+from framework.qa_fixtures import (ensure_postable_bill,  # noqa: F401
+                                   sweep_model, sweep_products,
+                                   with_categ)
 
 WORKFLOW = "DATAONE-WF-017"
 WORKFLOW_NAME = "Journal Entry Export to Workday"

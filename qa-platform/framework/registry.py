@@ -69,18 +69,35 @@ def reload() -> list[TestCaseDef]:
     """
     import sys
     _REGISTRY.clear()
-    # Suites import their shared helpers from framework.* (fixtures, common
-    # SQL, reconciliation). Dropping only tests.* left the OLD framework
-    # module objects in sys.modules, so a helper added since startup was
-    # invisible and the re-import died with ImportError — the reload appeared
-    # to work for test edits and silently not for helper edits.
-    # framework.registry itself is deliberately kept: it owns _REGISTRY and
-    # the decorator, and reloading it mid-call would orphan both.
+
+    # THE RULE: a module may be dropped only if no long-lived object holds a
+    # CLASS from it. Re-importing a module builds new class objects, and an
+    # `except SomeError` in freshly imported test code then no longer matches
+    # the SomeError raised by something imported at server start. The failure
+    # is silent and total — the handler simply stops running.
+    #
+    # Measured after a reload, every one of these stopped matching:
+    #   adapters.base.OdooRPCError    caught by every suite's sweep, raised
+    #                                 by the adapter the runner built at
+    #                                 start — so guarded teardown began
+    #                                 erroring out mid-sweep;
+    #   framework.context.BlockedTest / AssertionFailed / SkipTest
+    #                                 caught by backend.runner — so every
+    #                                 deliberate BLOCK and every assertion
+    #                                 failure was recorded as ERROR instead.
+    #
+    # Suites do import shared helpers from framework.*, and picking those up
+    # without a restart is the point of this endpoint, so the pure-helper
+    # modules are still dropped. The three that export classes across the
+    # boundary are not.
+    KEEP = {"framework.registry",    # owns _REGISTRY and the decorator
+            "framework.context"}     # BlockedTest / SkipTest / AssertionFailed
     stale = [n for n in sys.modules
-             if n == "tests" or n.startswith("tests.")
+             if (n == "tests" or n.startswith("tests."))
              or ((n == "framework" or n.startswith("framework."))
-                 and n != "framework.registry")
-             or n == "adapters" or n.startswith("adapters.")]
+                 and n not in KEEP)]
+    # adapters.* is never dropped: OdooRPCError is caught by test code and
+    # raised by adapter instances the runner created before this call.
     for name in stale:
         del sys.modules[name]
     importlib.invalidate_caches()
