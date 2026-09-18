@@ -62,6 +62,7 @@ guard BUILDS the command list before deleting it, so the SILENT failure
 mode is a command list whose shape changed and a diff text that comes out
 empty. Step 9's "the body itemises every change" is what catches that.
 """
+from framework.dto_fixtures import gate_analytic
 from framework.registry import test_case
 from tests.wf001.common import (ACTIVITY_TYPE_XMLID,  # noqa: F401
                                 CONFIRMED_ACTIVITY_SUMMARY, MARK, WORKFLOW,
@@ -166,6 +167,26 @@ def test_tc339(ctx):
                           {"requested_delivery_date": "2099-12-31"})
                 ctx.log("promised ship date filled on all three lines "
                         "(dto_sale Gate 3)")
+            # Gate 4, deployed with Stage 7: dto_account/models/sale_order.py:79
+            # refuses a 'project' order whose lines resolve to no account on
+            # the Project plan, and a 'buy' order without one on the Customer
+            # Contract plan. The Workday import writes the Project and
+            # Customer Contract COLUMNS carried above but does not turn them
+            # into an analytic_distribution, so the imported order cannot
+            # confirm. TC339's subject is what a confirmed order refuses
+            # afterwards, so the gate is satisfied here — the same step a
+            # salesperson performs — and logged rather than fought.
+            order_type = rpc.read("sale.order", [so_c], ["order_type"])[0].get(
+                "order_type")
+            distribution = gate_analytic(ctx, order_type,
+                                         label=f"{MARK} WF001")
+            if distribution:
+                rpc.write("sale.order.line",
+                          [line["id"] for line in lines],
+                          {"analytic_distribution": distribution})
+                ctx.log(f"analytic distribution {distribution!r} set on all "
+                        f"three lines for order_type={order_type!r} "
+                        f"(dto_account Gate 4)")
             rpc.call("sale.order", "action_confirm", [so_c])
             state = rpc.read("sale.order", [so_c], ["state", "name"])[0]
             ctx.log(f"SO-C after confirmation: {state!r}")

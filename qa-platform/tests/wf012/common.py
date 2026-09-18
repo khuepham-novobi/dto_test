@@ -69,7 +69,8 @@ import uuid
 
 from adapters.base import OdooRPCError
 from framework.dto_fixtures import (create_invoice, deliver_order,  # noqa: F401
-                                    order_invoices, order_pickings, set_stock,
+                                    gate_analytic, order_invoices,
+                                    order_pickings, set_stock,
                                     validate_picking)
 from framework.fg_common import m2o_id, make_trace  # noqa: F401
 from framework.qa_fixtures import (require_mail_offline,  # noqa: F401
@@ -294,6 +295,15 @@ def make_sale_order(ctx, order_type="project", qty=1.0, price=10.0,
     product_id = product_id or ensure_product(ctx)
     line = {"product_id": product_id, "product_uom_qty": qty,
             "price_unit": price, "requested_delivery_date": "2099-12-31"}
+    # A FOURTH confirmation gate, deployed with Stage 7: dto_account refuses
+    # a 'project' order whose lines carry no account on the Project plan
+    # ('Project is required') and a 'buy' order without one on the Customer
+    # Contract plan ('Customer Contract is required') — see gate_analytic.
+    # WF-012 asserts on what happens AFTER confirmation, so the gate is
+    # satisfied here rather than fought. An explicit `analytic` still wins,
+    # which is how TC289 varies it per order type.
+    if analytic is None:
+        analytic = gate_analytic(ctx, order_type, label=f"{MARK} WF012")
     if analytic:
         line["analytic_distribution"] = analytic
     values = {

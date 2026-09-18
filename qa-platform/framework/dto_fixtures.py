@@ -195,3 +195,60 @@ def create_invoice(ctx, order_id: int) -> int | None:
         return None
     invoices = order_invoices(rpc, order_id, ["id", "state"])
     return invoices[-1]["id"] if invoices else None
+
+
+# ------------------------------------------------- dto_account's analytic gate
+# dto_account/models/sale_order.py:79 dispatches sale.order.action_confirm to
+# _validate_analytic_distribution_<order_type>:
+#
+#   project   -> every product line must resolve to an account on the PROJECT
+#                plan, else ValidationError('Project is required')            :89
+#   buy       -> the same against the CUSTOMER CONTRACT plan, else
+#                ValidationError('Customer Contract is required')             :100
+#   inventory / cost_center -> refuse ANY distribution
+#
+# The gate is WF-002 TC078-TC082's own subject and those cases build their
+# distributions explicitly. Every OTHER suite that merely needs a confirmed
+# order — WF-001's import cases, WF-012's delivery notifications — hits it as
+# collateral, so the fixture must satisfy it or the case fails on a gate that
+# has nothing to do with what it asserts.
+#
+# Plan xmlids: dto_account/models/account_analytic_plan.py:6.
+ANALYTIC_PLAN_XMLIDS = {
+    "project": "dto_account.project_analytic_plan",
+    "contract": "dto_account.customer_contract_analytic_plan",
+    "cost": "dto_account.cost_center_analytic_plan",
+}
+
+#: order_type -> the plan its lines must carry. Absent = no distribution.
+ANALYTIC_PLAN_FOR_ORDER_TYPE = {"project": "project", "buy": "contract"}
+
+
+def ensure_analytic_account(rpc, plan_id: int, name: str) -> int:
+    """An analytic account on ``plan_id``, reused by name."""
+    found = rpc.search("account.analytic.account",
+                       [("name", "=", name), ("plan_id", "=", plan_id)],
+                       limit=1)
+    if found:
+        return found[0]
+    return rpc.create("account.analytic.account",
+                      {"name": name, "plan_id": plan_id})
+
+
+def gate_analytic(ctx, order_type: str, label: str = "QA Gate"):
+    """The analytic distribution the confirmation gate demands, or None.
+
+    Returns None for the order types that need none, and also when
+    dto_account's plans do not resolve on the target — so a database without
+    dto_account behaves exactly as it did before this helper existed.
+    """
+    plan_key = ANALYTIC_PLAN_FOR_ORDER_TYPE.get(order_type)
+    if plan_key is None:
+        return None
+    rpc = ctx.adapter.rpc
+    plan_id = rpc.ref(ANALYTIC_PLAN_XMLIDS[plan_key])
+    if not plan_id:
+        return None
+    account_id = ensure_analytic_account(
+        rpc, plan_id, f"{label} {order_type.title()}")
+    return {str(account_id): 100}
