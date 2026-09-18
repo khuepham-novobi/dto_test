@@ -1,6 +1,6 @@
 # DATAONE-WF-018 Report — Vendor Bill Export to Workday
 
-Generated 2026-09-18 14:23 by `scripts/gen_reports.py` from persisted execution results (`data/results.db`) and the workbook-synced registry. Expected results are the workbook's, verbatim.
+Generated 2026-09-18 15:44 by `scripts/gen_reports.py` from persisted execution results (`data/results.db`) and the workbook-synced registry. Expected results are the workbook's, verbatim.
 
 ## Counts
 
@@ -44,7 +44,7 @@ Generated 2026-09-18 14:23 by `scripts/gen_reports.py` from persisted execution 
 ## Failure notes (triage input)
 
 - **DATAONE-TC300** [Odoo 19 → ERROR / AUTOMATION_ERROR] OdooRPCError: sftp.file.mark_sync_failed failed: 'str' object has no attribute 'date'
-- **DATAONE-TC316** [Odoo 19 → FAIL / ASSERTION] the file carries exactly BB-1, BB-3 and BB-4, in selection order: expected [192548, 192550, 192551], got [192551, 192550, 192548]
+- **DATAONE-TC316** [Odoo 19 → FAIL / ASSERTION] the file carries exactly BB-1, BB-3 and BB-4, in selection order: expected [192683, 192685, 192686], got [192686, 192685, 192683]
 - **DATAONE-TC317** [Odoo 19 → FAIL / ASSERTION] every asserted cell on row 6 carries its mapped value (one dict, so a failure reports all of them): expected {}, got {'Q': {'expected': '2026-08-01', 'actual': '2026-08-01 00:00:00'}, 'AF': {'expected': '2026-01-15', 'actual': '2026-01-15 00:00:00'}}
 - **DATAONE-TC319** [Odoo 19 → ERROR / AUTOMATION_ERROR] OdooRPCError: account.move.action_post failed: User cannot confirm the bill. The Vendor Bill requires an attachment before posting.
-- **DATAONE-TC326** [Odoo 19 → FAIL / ASSERTION] two payments created: expected 2, got 4
+- **DATAONE-TC326** [Odoo 19 → FAIL / ASSERTION] two payments created: expected 2, got 6

@@ -1,6 +1,6 @@
 # DATAONE-WF-020 Report — Supplier Master Import from Workday
 
-Generated 2026-09-18 14:23 by `scripts/gen_reports.py` from persisted execution results (`data/results.db`) and the workbook-synced registry. Expected results are the workbook's, verbatim.
+Generated 2026-09-18 15:44 by `scripts/gen_reports.py` from persisted execution results (`data/results.db`) and the workbook-synced registry. Expected results are the workbook's, verbatim.
 
 ## Counts
 
@@ -49,7 +49,7 @@ Generated 2026-09-18 14:23 by `scripts/gen_reports.py` from persisted execution 
 
 ## Failure notes (triage input)
 
-- **DATAONE-TC008** [Odoo 19 → FAIL / ASSERTION] No differences vs v17 baseline: expected [], got ["dto_account_workday.ir_cron_export_workday_journal_entries: baseline='active=True interval=1days priority=5' current=None", "dto_account_workday.ir_cron_export_workday_vendor_bills: baseline='active=True inter
+- **DATAONE-TC008** [Odoo 19 → FAIL / ASSERTION] No differences vs v17 baseline: expected [], got ["dto_account_workday.ir_cron_export_workday_journal_entries: baseline='active=True interval=1days priority=5' current='active=False interval=1days priority=5'", "dto_account_workday.ir_cron_export_workday_vendo
 - **DATAONE-TC293** [Odoo 19 → FAIL / ASSERTION] GET poller active: expected True, got False
 - **DATAONE-TC293** [Odoo 17 → ERROR / AUTOMATION_ERROR] OdooRPCError: sftp.server.search failed: sftp.server
 - **DATAONE-TC301** [Odoo 19 → ERROR / AUTOMATION_ERROR] KeyError: 'traceback'
@@ -61,5 +61,5 @@ Generated 2026-09-18 14:23 by `scripts/gen_reports.py` from persisted execution 
 - **DATAONE-TC333** [Odoo 17 → FAIL / ASSERTION] chatter messages added by the import: expected 0, got 2
 - **DATAONE-TC335** [Odoo 19 → FAIL / ASSERTION] wrong-code state_id: expected 52, got None
 - **DATAONE-TC335** [Odoo 17 → FAIL / ASSERTION] wrong-code state_id: expected 52, got None
-- **DATAONE-TC459** [Odoo 19 → FAIL / ASSERTION] inactive crons: expected [], got ['novobi_sftp_connection.ir_cron_get_sftp_files', 'novobi_sftp_connection.ir_cron_post_sftp_files', 'novobi_sftp_connection.ir_cron_process_sftp_files', 'queue_job.ir_cron_autovacuum_queue_jobs']
+- **DATAONE-TC459** [Odoo 19 → FAIL / ASSERTION] inactive crons: expected [], got ['dto_account_workday.ir_cron_export_workday_journal_entries', 'dto_account_workday.ir_cron_export_workday_vendor_bills', 'novobi_sftp_connection.ir_cron_get_sftp_files', 'novobi_sftp_connection.ir_cron_post_sftp_files', 'novob
 - **DATAONE-TC460** [Odoo 19 → FAIL / ASSERTION] subject cron is active: expected True, got False

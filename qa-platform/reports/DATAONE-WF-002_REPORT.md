@@ -1,6 +1,6 @@
 # DATAONE-WF-002 Report — Quotation → sales order confirmation
 
-Generated 2026-09-18 14:23 by `scripts/gen_reports.py` from persisted execution results (`data/results.db`) and the workbook-synced registry. Expected results are the workbook's, verbatim.
+Generated 2026-09-18 15:46 by `scripts/gen_reports.py` from persisted execution results (`data/results.db`) and the workbook-synced registry. Expected results are the workbook's, verbatim.
 
 ## Counts
 
@@ -70,7 +70,7 @@ Generated 2026-09-18 14:23 by `scripts/gen_reports.py` from persisted execution 
 
 - **DATAONE-TC053** [Odoo 19 → ERROR / AUTOMATION_ERROR] OdooRPCError: web session authentication failed: Access Denied
 - **DATAONE-TC053** [Odoo 17 → FAIL / ASSERTION] anchor orders_without_type: expected 0, got 24
-- **DATAONE-TC057** [Odoo 19 → FAIL / ASSERTION] No differences vs v17 baseline: expected [], got ["server_action/dto_account_workday.ir_cron_export_workday_journal_entries_ir_actions_server/code_md5: baseline='b7ee9c558d87d035a558205f34d29af9' current=None", 'server_action/dto_account_workday.ir_cron_export
+- **DATAONE-TC057** [Odoo 19 → FAIL / ASSERTION] No differences vs v17 baseline: expected [], got ['automation/dto_sale_stock.base_automation_send_email_on_sale_order_shipped: baseline=None current="active=True trigger=on_create_or_write pre=[(\'state\', \'!=\', \'done\')] post=[(\'state\', \'=\', \'done\')]
 - **DATAONE-TC061** [Odoo 19 → ERROR / AUTOMATION_ERROR] OdooRPCError: sale.order.create failed: - delete: another model requires the record being deleted, you can archive it instead
 - **DATAONE-TC061** [Odoo 17 → FAIL / ASSERTION] the create without order_type was refused: expected True, got 'no error raised'
 - **DATAONE-TC062** [Odoo 19 → ERROR / AUTOMATION_ERROR] OdooRPCError: product.template.create failed: - delete: another model requires the record being deleted, you can archive it instead
@@ -81,4 +81,4 @@ Generated 2026-09-18 14:23 by `scripts/gen_reports.py` from persisted execution 
 - **DATAONE-TC072** [Odoo 17 → FAIL / ASSERTION] line delivery_status for a late shipment: expected 'early', got 'late'
 - **DATAONE-TC085** [Odoo 19 → FAIL / ASSERTION] confirmation aborted: expected True, got 'no error raised'
 - **DATAONE-TC085** [Odoo 17 → FAIL / ASSERTION] the message names a bool that is not iterable: expected True, got 'sale.order.action_confirm failed: "def get_analytic_accounts(analytic_distribution_lst):\\n    unique_ids = set()\\n    for data in analytic_distribution_lst:\\n        for ids_str in data.keys
-- **DATAONE-TC350** [Odoo 19 → FAIL / ASSERTION] Workday usage keys missing: expected [], got ['workday_vendor_bill', 'workday_journal_entry', 'workday_vendor_payment']
+- **DATAONE-TC350** [Odoo 19 → FAIL / ASSERTION] ACTIVE Workday SFTP folders: expected [], got ['Test-UAT/Journal Entries', 'Test-UAT/Draft Vendor Bills', 'Test-UAT/Suppliers', 'Test-UAT/Vendor Payments', '/WF017/bcec18/out', '/WF018/70d63c/out', '/WF018/70d63c/in', '/WF019/1e65d3/in', '/WF019/1e65d3/in', '/

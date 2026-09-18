@@ -1,15 +1,15 @@
 # DATAONE-WF-006 Report — Manufacturing Execution on the Shop Floor
 
-Generated 2026-09-18 14:23 by `scripts/gen_reports.py` from persisted execution results (`data/results.db`) and the workbook-synced registry. Expected results are the workbook's, verbatim.
+Generated 2026-09-18 15:44 by `scripts/gen_reports.py` from persisted execution results (`data/results.db`) and the workbook-synced registry. Expected results are the workbook's, verbatim.
 
 ## Counts
 
 - Test cases: **14**
 - Automated (covered by platform tests): **8** of 11 automatable
 - Manual-only: **3**
-- Currently BLOCKED (either environment): **4**
+- Currently BLOCKED (either environment): **0**
 - Odoo 17: PASS 0 / FAIL 0 / BLOCKED 0 / SKIPPED 0 / not executed 14
-- Odoo 19: PASS 4 / FAIL 0 / BLOCKED 4 / not executed 6
+- Odoo 19: PASS 8 / FAIL 0 / BLOCKED 0 / not executed 6
 
 ## Cross-version classification
 
@@ -19,8 +19,8 @@ Generated 2026-09-18 14:23 by `scripts/gen_reports.py` from persisted execution 
 | REGRESSION_CANDIDATE | 0 |
 | FIXED | 0 |
 | SAME_FAILURE | 0 |
-| BLOCKED | 4 |
-| NOT_COMPARED | 10 |
+| BLOCKED | 0 |
+| NOT_COMPARED | 14 |
 
 > REGRESSION_CANDIDATE is not a confirmed regression until failure triage; BLOCKED reflects the missing local Odoo 19 environment (see docs/ENVIRONMENT_STATUS.md).
 
@@ -38,7 +38,7 @@ Generated 2026-09-18 14:23 by `scripts/gen_reports.py` from persisted execution 
 | DATAONE-TC128 | The Shop Floor board renders at all | P0 | PLANNED | NOT_IMPLEMENTED | NOT_IMPLEMENTED | NOT_COMPARED |
 | DATAONE-TC130 | All three DataOne buttons appear in the Shop Floor work-order menu and | P1 | PLANNED | NOT_IMPLEMENTED | NOT_IMPLEMENTED | NOT_COMPARED |
 | DATAONE-TC131 | The Product Documents dialog: single-doc auto-open, previews, shared l | P1 | CANDIDATE | NOT_IMPLEMENTED | NOT_IMPLEMENTED | NOT_COMPARED |
-| DATAONE-TC132 | A second concurrent timesheet for the same employee raises | P0 | AUTOMATED | NOT_RUN | BLOCKED | BLOCKED |
-| DATAONE-TC133 | v19 SILENT The concurrency guard still fires when create receives a li | P0 | AUTOMATED | NOT_RUN | BLOCKED | BLOCKED |
-| DATAONE-TC134 | A 5-hour timesheet on a 2-unit MO with a 120 min/unit cap records exac | P0 | AUTOMATED | NOT_RUN | BLOCKED | BLOCKED |
-| DATAONE-TC135 | A closed timesheet cannot be edited except by the Change Timesheets gr | P1 | AUTOMATED | NOT_RUN | BLOCKED | BLOCKED |
+| DATAONE-TC132 | A second concurrent timesheet for the same employee raises | P0 | AUTOMATED | NOT_RUN | PASS | NOT_COMPARED |
+| DATAONE-TC133 | v19 SILENT The concurrency guard still fires when create receives a li | P0 | AUTOMATED | NOT_RUN | PASS | NOT_COMPARED |
+| DATAONE-TC134 | A 5-hour timesheet on a 2-unit MO with a 120 min/unit cap records exac | P0 | AUTOMATED | NOT_RUN | PASS | NOT_COMPARED |
+| DATAONE-TC135 | A closed timesheet cannot be edited except by the Change Timesheets gr | P1 | AUTOMATED | NOT_RUN | PASS | NOT_COMPARED |

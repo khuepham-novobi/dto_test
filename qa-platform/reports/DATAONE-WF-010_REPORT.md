@@ -1,6 +1,6 @@
 # DATAONE-WF-010 Report — MO Test-Result Attachment Import ("Production" data type)
 
-Generated 2026-09-18 14:23 by `scripts/gen_reports.py` from persisted execution results (`data/results.db`) and the workbook-synced registry. Expected results are the workbook's, verbatim.
+Generated 2026-09-18 15:44 by `scripts/gen_reports.py` from persisted execution results (`data/results.db`) and the workbook-synced registry. Expected results are the workbook's, verbatim.
 
 ## Counts
 
@@ -42,4 +42,4 @@ Generated 2026-09-18 14:23 by `scripts/gen_reports.py` from persisted execution 
 - **DATAONE-TC344** [Odoo 19 → FAIL / ASSERTION] the complete stored-field dump is unchanged, excluding the mail-mixin counters and write_date: expected {}, got {'have_attachment': {'before': False, 'after': True}}
 - **DATAONE-TC346** [Odoo 19 → ERROR / AUTOMATION_ERROR] OdooRPCError: mrp.production.write failed: You cannot set more than 1 lot
 - **DATAONE-TC347** [Odoo 19 → FAIL / ASSERTION] the message opens a <ul> and never closes it — mrp_attachment_transformer.py:64-69 ends the f-string after the second <li>. It renders acceptably in most browsers and is still malformed; E2, recorded for the port: expected True, got '2 open, 2 closed'
-- **DATAONE-TC348** [Odoo 19 → FAIL / ASSERTION] the control MO received nothing: expected [], got [{'id': 136162, 'name': 'WF010_M4_single_row.csv [9ec819]', 'res_model': 'mrp.production', 'res_id': 47844, 'file_size': 66, 'mimetype': 'text/csv'}]
+- **DATAONE-TC348** [Odoo 19 → FAIL / ASSERTION] the control MO received nothing: expected [], got [{'id': 136521, 'name': 'WF010_M4_single_row.csv [9e9470]', 'res_model': 'mrp.production', 'res_id': 47888, 'file_size': 66, 'mimetype': 'text/csv'}]

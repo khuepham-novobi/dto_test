@@ -1,6 +1,6 @@
 # DATAONE-WF-016 Report — Vendor Bill Entry & Posting
 
-Generated 2026-09-18 14:23 by `scripts/gen_reports.py` from persisted execution results (`data/results.db`) and the workbook-synced registry. Expected results are the workbook's, verbatim.
+Generated 2026-09-18 15:44 by `scripts/gen_reports.py` from persisted execution results (`data/results.db`) and the workbook-synced registry. Expected results are the workbook's, verbatim.
 
 ## Counts
 
@@ -49,7 +49,7 @@ Generated 2026-09-18 14:23 by `scripts/gen_reports.py` from persisted execution 
 
 ## Failure notes (triage input)
 
-- **DATAONE-TC049** [Odoo 19 → FAIL / ASSERTION] No differences vs v17 baseline: expected [], got ['payable/TOTAL: baseline=0.0 current=-683032.62', 'payable/partner/14: baseline=0.0 current=None', 'payable/partner/155: baseline=None current=-2736.0', 'payable/partner/160: baseline=None current=-512.3', 'pay
+- **DATAONE-TC049** [Odoo 19 → FAIL / ASSERTION] No differences vs v17 baseline: expected [], got ['payable/TOTAL: baseline=0.0 current=-680202.62', 'payable/partner/12445: baseline=None current=140.0', 'payable/partner/12446: baseline=None current=100.0', 'payable/partner/12447: baseline=None current=450.0'
 - **DATAONE-TC051** [Odoo 19 → FAIL / ASSERTION] No differences vs v17 baseline: expected [], got ['balance/1/2026: baseline=0.0 current=None', 'balance/2/2025: baseline=0.0 current=None', 'balance/2/2026: baseline=0.0 current=None', 'count/1/2026: baseline=9 current=None', 'count/2/2025: baseline=2 current=
 - **DATAONE-TC262** [Odoo 19 → FAIL / ASSERTION] have_attachment after attaching: expected True, got False
 - **DATAONE-TC263** [Odoo 19 → FAIL / ASSERTION] bill A have_attachment: expected True, got False
