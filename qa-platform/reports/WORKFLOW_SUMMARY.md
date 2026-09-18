@@ -1,15 +1,15 @@
 # DataOne 17 → 19 — In-Scope Workflow Summary
 
-Generated 2026-09-18 17:40. Source: persisted executions in `data/results.db` + the workbook-synced registry (355 in-scope test cases across 24 workflows).
+Generated 2026-09-18 17:41. Source: persisted executions in `data/results.db` + the workbook-synced registry (355 in-scope test cases across 24 workflows).
 
 ## Headline numbers
 
 - **Total cases:** 355
 - **Automated (covered by platform tests):** 337
 - **Manual-only:** 23
-- **Blocked (any environment):** 63
+- **Blocked (any environment):** 64
 - **Odoo 17:** PASS 54 / FAIL 18
-- **Odoo 19:** PASS 147 / FAIL 135
+- **Odoo 19:** PASS 147 / FAIL 134
 - **Regression candidates:** 16 (pending triage)
 - **Fixed cases:** 6
 - **Automation coverage:** 94.9% of all in-scope cases (337/355)
@@ -23,8 +23,8 @@ Generated 2026-09-18 17:40. Source: persisted executions in `data/results.db` + 
 | REGRESSION_CANDIDATE | 16 |
 | FIXED | 6 |
 | SAME_FAILURE | 11 |
-| BLOCKED | 63 |
-| NOT_COMPARED | 221 |
+| BLOCKED | 64 |
+| NOT_COMPARED | 220 |
 
 ## Per workflow
 
@@ -36,7 +36,7 @@ Generated 2026-09-18 17:40. Source: persisted executions in `data/results.db` + 
 | DATAONE-WF-005 | Manufacturing Order Planning & Work-Order  | 10 | 6 | 0/0 | 5/0 | 0 | 0 |
 | DATAONE-WF-006 | Manufacturing Execution on the Shop Floor | 14 | 8 | 0/0 | 8/0 | 0 | 0 |
 | DATAONE-WF-007 | MO Completion, Serial-Number Generation &  | 17 | 12 | 0/0 | 2/7 | 0 | 0 |
-| DATAONE-WF-008 | Manufacturing Cost Absorption (Labour and  | 23 | 23 | 2/0 | 2/18 | 2 | 0 |
+| DATAONE-WF-008 | Manufacturing Cost Absorption (Labour and  | 23 | 23 | 2/0 | 2/17 | 2 | 0 |
 | DATAONE-WF-009 | Component Shortage Auto-Substitution | 8 | 8 | 0/0 | 6/2 | 0 | 0 |
 | DATAONE-WF-010 | MO Test-Result Attachment Import ("Product | 7 | 7 | 0/0 | 1/5 | 0 | 0 |
 | DATAONE-WF-011 | Delivery, Boxing, Blind Ship & Packing Doc | 19 | 19 | 0/0 | 7/9 | 0 | 0 |
