@@ -125,10 +125,31 @@ ERR_CREATE_PREFIX = "Error when creating data:"
 ERR_HEADER_PREFIX = "Error when transforming the header data:"
 ERR_LINE_PREFIX = "Error when transforming the line data:"
 
-#: data/queue_job_channel_data.xml:5,10,15
-QUEUE_CHANNELS = ("root.dto_data_migration_po",
-                  "root.dto_data_migration_mo",
-                  "root.dto_data_migration_so")
+#: data/queue_job_channel_data.xml:5,10,15 — three channels, all children
+#: of queue_job.channel_root. Verified on d1v19: queue.job.channel holds
+#: exactly root plus these three.
+QUEUE_CHANNELS = ("root.import_purchase_order",
+                  "root.import_mrp_production",
+                  "root.import_sale_order")
+
+#: models/dto_data_migration.py:24-25 builds the channel name from the model::
+#:
+#:     model_name = self._name.replace('.', '_')
+#:     self.with_delay(channel=f'import_{model_name}')
+#:
+#: so mrp.bom asks for `import_mrp_bom`, which no data file defines. TC409 is
+#: that gap: queue_job falls back to the root channel rather than raising.
+#: What `queue.job.channel` (a Char) actually holds: the name the caller
+#: ASKED for, verbatim — not the resolved queue.job.channel.complete_name.
+#: Measured on d1v19: a queued MO import records 'import_mrp_production',
+#: and a queued BOM import records 'import_mrp_bom' even though no such
+#: channel record exists.
+CHANNEL_FOR_TYPE = {
+    "closed_po": "import_purchase_order",
+    "closed_mo": "import_mrp_production",
+    "closed_so": "import_sale_order",
+    "bom": "import_mrp_bom",
+}
 
 WIZARD = "import.data.wizard"
 WIZARD_ACTION_XMLID = "dto_data_migration.action_import_data_wizard"
@@ -392,3 +413,42 @@ SUPPRESSED_OBSERVABLES = {
     "mrp.production": ["state", "qty_produced", "qty_producing",
                        "import_qty_produced"],
 }
+
+
+def wait_for_job(rpc, job_id: int, *, want=("done", "failed", "cancelled"),
+                 timeout: float = 90.0, poll: float = 1.0) -> dict:
+    """Poll one queue.job until it reaches a terminal state, or time out.
+
+    The jobrunner is a separate thread inside the Odoo process, so a queued
+    job finishes asynchronously and there is no callback to wait on. Polling
+    is the only option over RPC; the timeout is generous because the runner
+    wakes on its own schedule, and a timeout is reported as a fact rather
+    than retried forever.
+    """
+    import time
+    deadline = time.time() + timeout
+    row = {}
+    while time.time() < deadline:
+        row = rpc.read("queue.job", [job_id],
+                       ["state", "exc_info", "channel", "retry"])[0]
+        if row["state"] in want:
+            return row
+        time.sleep(poll)
+    return row
+
+
+def jobs_for_token(rpc, fields=None):
+    """Every queue.job this execution created — token-scoped.
+
+    queue.job carries no origin field, so the scope comes from the job's
+    `name`/`func_string`, which embeds the record ids. Falling back to a
+    time window would sweep up the client's own jobs, which rule 3 forbids.
+    """
+    fields = fields or ["name", "state", "channel", "model_name",
+                        "method_name", "exc_info"]
+    return rpc.search_read(
+        "queue.job",
+        [("model_name", "in", ["purchase.order", "sale.order",
+                               "mrp.production", "mrp.bom"]),
+         ("method_name", "=", "_import_data_migration")],
+        fields, order="id desc", limit=20)
