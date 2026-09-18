@@ -4,6 +4,13 @@ Everything here is built from what the store already persists — the workbook
 registry and the recorded executions. Nothing is recomputed or inferred, so an
 exported file and the dashboard always agree.
 
+The run export (:func:`run_workbook`) fills a COPY of the source workbook
+rather than inventing its own layout: QA plans the session in
+``DataOne_v19_Test_Suite_and_Workflows_v1.0.xlsx`` and signs it off in the
+same file, so a run must hand back that shape — same nine sheets, same
+columns, same live ``Suite Overview`` counts. The original on disk is never
+written to (Read Me: the workbook is the source of truth).
+
 openpyxl is already a dependency (scripts/sync_registry.py reads the workbook
 with it); write support needs no new package.
 """
@@ -11,13 +18,21 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import re
 from datetime import datetime, timezone
+from pathlib import Path
 
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.table import Table, TableStyleInfo
+
+# Same id shape the store indexes executions by — one definition, so a
+# traceability block that maps to a workbook row here maps there too.
+from backend.store import _TC_ID_RE as TC_ID_RE
+
+ROOT = Path(__file__).resolve().parent.parent
 
 # ---------------------------------------------------------------- styling
 HEAD_FILL = PatternFill("solid", fgColor="1F3247")
@@ -217,42 +232,269 @@ def testcases_workbook(store, in_scope_only: bool = True) -> bytes:
 
 
 # ---------------------------------------------------------- run detail xlsx
-def run_workbook(store, run_id: str) -> bytes:
-    """One run, in full: summary, every result, every step, every assertion.
+#: The workbook the registry is synced from, and the sheet QA executes on.
+TEMPLATE_FILENAME = "DataOne_v19_Test_Suite_and_Workflows_v1.0.xlsx"
+TEMPLATE_GLOB = "DataOne_v19_Test_Suite_and_Workflows_v1.0*.xlsx"
+EXEC_SHEET = "Test Execution"
 
-    Steps and assertions are the evidence a triage reader actually needs, so
-    they get their own sheets rather than being flattened into a cell.
+#: Only this environment is written back. The workbook's "Odoo 17 Result"
+#: column is the Phase-0a MANUAL baseline (Read Me, step 4) — an automated
+#: run must never overwrite it, so a v17 run fills nothing.
+EXEC_ENVIRONMENT = "odoo19"
+
+#: Columns the fill touches, found by header text rather than by letter — a
+#: column inserted in a later workbook revision must not silently shift the
+#: write onto its neighbour.
+EXEC_RESULT = "Result"
+EXEC_RUN_DATE = "Run Date"
+EXEC_TESTER = "Tester"
+EXEC_OUTCOME = "Odoo 19 Result"
+EXEC_TC_ID = "TC ID"
+
+#: Result is a locked dropdown — "Not Run,Pass,Fail,Blocked,N/A" — so the
+#: five platform statuses have to land inside that vocabulary. ERROR maps to
+#: Fail: on this sheet anything that did not pass is a failure, and the raw
+#: status is preserved verbatim in the Odoo 19 Result cell beside it.
+EXEC_RESULT_VALUE = {
+    "PASSED": "Pass", "FAILED": "Fail", "ERROR": "Fail",
+    "BLOCKED": "Blocked", "SKIPPED": "N/A",
+}
+
+#: Worst-first. One workbook case can be covered by several automated tests;
+#: the sheet carries one verdict, and the worst outcome is the honest one.
+EXEC_PRECEDENCE = ("FAILED", "ERROR", "BLOCKED", "SKIPPED", "PASSED")
+
+#: Read Me, step 3: "cells auto-colour: Pass=green, Fail=red, Blocked=orange".
+#: The workbook ships no conditional formatting, so the fill is applied here.
+EXEC_FILL = {"Pass": "1E7A3C", "Fail": "A32B22",
+             "Blocked": "C55A11", "N/A": "595959"}
+
+DEFAULT_TESTER = "QA Automation Platform"
+
+
+class TemplateUnusable(RuntimeError):
+    """The run export cannot keep the workbook's shape, and says why.
+
+    Distinct from the KeyError a missing run raises, so the API can answer
+    404 for "no such run" and 503 — with something actionable — for "the
+    workbook this export is built on is absent or has changed shape".
     """
-    run = store.run(run_id)
-    if not run:
-        raise KeyError(run_id)
-    details = [store.result(r["id"]) for r in run["results"]]
-    details = [d for d in details if d]
 
-    wb = _new_workbook()
-    ws = wb.create_sheet("Summary")
-    ws.column_dimensions["A"].width = 26
-    ws.column_dimensions["B"].width = 70
-    ws["A1"] = "Run " + run_id
-    ws["A1"].font = Font(bold=True, size=14)
-    by_status: dict = {}
+
+class TemplateMissing(TemplateUnusable, FileNotFoundError):
+    """No source workbook found in any of the searched locations."""
+
+
+class TemplateInvalid(TemplateUnusable):
+    """A workbook was found, but it is not the sheet this export writes to."""
+
+
+def _registry_workbook():
+    """The file scripts/sync_registry.py last read, if it recorded one.
+
+    Last resort only. The fill matches rows by the TC ID written in the sheet
+    itself, never by a row number carried in from the registry, so the export
+    does not depend on this file — it is a fallback for a host that has the
+    workbook nowhere else.
+    """
+    try:
+        reg = json.loads((ROOT / "data" / "test_registry.json")
+                         .read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return Path(reg["workbook"]) if reg.get("workbook") else None
+
+
+def _template_path() -> Path:
+    """Locate the source workbook. Checked in order, first hit wins:
+
+    1. ``$QA_WORKBOOK`` — an explicit path, for a non-standard deployment.
+    2. ``data/`` beside the database — the operational default. Dropping the
+       current workbook revision here is how an operator pins the template.
+    3. ``/workbook/`` — the read-only mount docker-compose provides.
+    4. ``~/Downloads/`` — where scripts/sync_registry.py looks by default.
+    5. whatever the registry was synced from, which may be an older revision.
+    6. a working copy such as ``... v1.0 (4).xlsx`` in any of those
+       directories, newest first, so a freshly downloaded revision is picked
+       up without anyone having to rename it.
+
+    The file is only ever read; the fill happens on the in-memory copy.
+    """
+    dirs = [ROOT / "data", Path("/workbook"), Path.home() / "Downloads"]
+    exact = []
+    if os.environ.get("QA_WORKBOOK", "").strip():
+        exact.append(Path(os.environ["QA_WORKBOOK"].strip()))
+    exact += [d / TEMPLATE_FILENAME for d in dirs]
+    registry = _registry_workbook()
+    if registry:
+        exact.append(registry)
+    for path in exact:
+        try:
+            if path.is_file():
+                return path
+        except OSError:
+            continue
+
+    pool: list = []
+    for d in dirs:
+        try:
+            pool += [p for p in d.glob(TEMPLATE_GLOB) if p.is_file()]
+        except OSError:
+            continue
+    if pool:
+        return max(pool, key=lambda p: p.stat().st_mtime)
+    raise TemplateMissing(
+        "Source workbook not found. Put %s in %s, or point QA_WORKBOOK at it."
+        % (TEMPLATE_FILENAME, ROOT / "data"))
+
+
+def _tc_index(details: list) -> dict:
+    """workbook TC id -> the run results that cover it."""
+    by_tc: dict = {}
     for d in details:
-        by_status[d["status"]] = by_status.get(d["status"], 0) + 1
+        for raw in (d.get("traceability") or {}).get("tc_ids", []):
+            m = TC_ID_RE.search(str(raw))
+            if m:
+                by_tc.setdefault(m.group(0), []).append(d)
+    return by_tc
+
+
+def _worst(results: list):
+    """The result that decides the cell: worst status, latest of its kind."""
+    def rank(d):
+        status = d["status"]
+        order = (EXEC_PRECEDENCE.index(status)
+                 if status in EXEC_PRECEDENCE else len(EXEC_PRECEDENCE))
+        return (order, -(d["finished_at"] or 0))
+    return sorted(results, key=rank)[0]
+
+
+def _outcome_text(results: list, run: dict) -> str:
+    """What the environment actually did — the evidence half of the row.
+
+    Read Me, step 3: "On Fail record Odoo 19 Result and the Defect ID". A
+    pass gets the same treatment, so a reviewer can tell a case that asserted
+    something from one that merely did not crash.
+    """
+    lines = []
+    for d in sorted(results, key=lambda x: x["test_id"]):
+        failed = sum(1 for a in d["assertions"] if not a["passed"])
+        head = "%s · %s" % (d["status"], d["test_id"])
+        if d["status"] == "PASSED":
+            lines.append("%s — %d step(s), %d assertion(s), all passed"
+                         % (head, len(d["steps"]), len(d["assertions"])))
+            continue
+        parts = [head]
+        if d.get("failed_step"):
+            parts.append("failed step: %s" % d["failed_step"])
+        if d.get("expected") or d.get("actual"):
+            parts.append("expected %s / got %s"
+                         % (d.get("expected") or "—",
+                            d.get("actual") or "—"))
+        if d.get("skip_reason"):
+            parts.append("reason: %s" % d["skip_reason"])
+        if d.get("error"):
+            parts.append("error: %s" % str(d["error"]).strip().splitlines()[0])
+        if failed:
+            parts.append("%d assertion(s) failed" % failed)
+        lines.append(" · ".join(parts))
+    lines.append("[%s · %s · %s]" % (
+        run["id"], run["env_name"],
+        _ts(run["finished_at"] or run["started_at"])))
+    text = "\n".join(lines)
+    return text[:2000] + (" ...[truncated]" if len(text) > 2000 else "")
+
+
+def _fill_execution_sheet(ws, details: list, run: dict, tester: str) -> dict:
+    """Write this run onto the workbook's manual-test sheet, in place.
+
+    Rows are located by their own ``TC ID`` cell, never by a row number
+    carried in from the registry: the sheet validates the mapping itself, so
+    a workbook revision that reorders rows cannot put a verdict on the wrong
+    case. Only the four execution columns are touched — every other cell,
+    and the Suite Overview formulas that count them, are left alone.
+    """
+    headers = {str(c.value).strip(): c.column for c in ws[1] if c.value}
+    missing = [h for h in (EXEC_TC_ID, EXEC_RESULT, EXEC_RUN_DATE,
+                           EXEC_TESTER, EXEC_OUTCOME) if h not in headers]
+    if missing:
+        raise TemplateInvalid("%s sheet has no column(s): %s"
+                              % (EXEC_SHEET, ", ".join(missing)))
+
+    rows = {}
+    for r in range(2, ws.max_row + 1):
+        tc_id = ws.cell(row=r, column=headers[EXEC_TC_ID]).value
+        if tc_id:
+            rows[str(tc_id).strip()] = r
+
+    by_tc = _tc_index(details)
+    audit = {"covered": len(by_tc), "filled": 0, "unmapped": [],
+             "results_without_tc": 0, "values": {}}
+    for d in details:
+        if not any(TC_ID_RE.search(str(x))
+                   for x in (d.get("traceability") or {}).get("tc_ids", [])):
+            audit["results_without_tc"] += 1
+
+    for tc_id, results in sorted(by_tc.items()):
+        row = rows.get(tc_id)
+        if not row:
+            audit["unmapped"].append(tc_id)
+            continue
+        decisive = _worst(results)
+        value = EXEC_RESULT_VALUE.get(decisive["status"], "Not Run")
+        when = max((r["finished_at"] or r["started_at"] or 0)
+                   for r in results) or run["finished_at"] or run["started_at"]
+
+        cell = ws.cell(row=row, column=headers[EXEC_RESULT])
+        cell.value = value
+        colour = EXEC_FILL.get(value)
+        if colour:
+            cell.fill = PatternFill("solid", fgColor=colour)
+            cell.font = Font(name=cell.font.name or "Arial",
+                             sz=cell.font.sz or 10, color="FFFFFF", bold=True)
+
+        date_cell = ws.cell(row=row, column=headers[EXEC_RUN_DATE])
+        date_cell.value = (datetime.fromtimestamp(float(when), tz=timezone.utc)
+                           .astimezone().date()) if when else None
+        date_cell.number_format = "yyyy-mm-dd"
+
+        ws.cell(row=row, column=headers[EXEC_TESTER]).value = tester
+        ws.cell(row=row, column=headers[EXEC_OUTCOME]).value = _flat(
+            _outcome_text(results, run))
+
+        audit["filled"] += 1
+        audit["values"][value] = audit["values"].get(value, 0) + 1
+    return audit
+
+
+def _run_summary_sheet(wb, run: dict, details: list, note: list) -> None:
+    """The run's own header block, appended after the workbook's sheets."""
+    ws = wb.create_sheet("Run Summary")
+    ws.column_dimensions["A"].width = 28
+    ws.column_dimensions["B"].width = 96
+    ws["A1"] = "Run " + run["id"]
+    ws["A1"].font = Font(bold=True, size=14)
     duration = ((run["finished_at"] or 0) - (run["started_at"] or 0)) \
         if run["started_at"] and run["finished_at"] else 0
     meta = [
         ("Label", run["label"]), ("Environment", run["env_name"]),
         ("Mode", run["mode"]), ("Status", run["status"]),
-        ("Started", _ts(run["started_at"])), ("Finished", _ts(run["finished_at"])),
+        ("Started", _ts(run["started_at"])),
+        ("Finished", _ts(run["finished_at"])),
         ("Wall clock", "%.1f min" % (duration / 60) if duration else ""),
         ("Tests planned", run["total"]), ("Results recorded", len(details)),
-        ("Exported at", datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S")),
+        ("Exported at",
+         datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S")),
     ]
     for i, (k, v) in enumerate(meta, start=3):
         ws.cell(row=i, column=1, value=k).font = Font(bold=True)
         ws.cell(row=i, column=2, value=_flat(v))
+
     row = len(meta) + 4
     ws.cell(row=row, column=1, value="By status").font = Font(bold=True, size=12)
+    by_status: dict = {}
+    for d in details:
+        by_status[d["status"]] = by_status.get(d["status"], 0) + 1
     for status, n in sorted(by_status.items(), key=lambda kv: -kv[1]):
         row += 1
         cell = ws.cell(row=row, column=1, value=status)
@@ -262,7 +504,18 @@ def run_workbook(store, run_id: str) -> bytes:
             cell.font = Font(color="FFFFFF", bold=True)
         ws.cell(row=row, column=2, value=n)
 
-    _sheet(wb, "Results", [
+    row += 2
+    ws.cell(row=row, column=1,
+            value="Test Execution fill").font = Font(bold=True, size=12)
+    for k, v in note:
+        row += 1
+        ws.cell(row=row, column=1, value=k).font = Font(bold=True)
+        ws.cell(row=row, column=2, value=_flat(v)).alignment = WRAP
+
+
+def _run_detail_sheets(wb, details: list) -> None:
+    """Results, steps and assertions — the evidence behind every verdict."""
+    _sheet(wb, "Run Results", [
         ("Result ID", 18), ("Test ID", 24), ("Name", 54), ("Workflow", 18),
         ("Workbook TCs", 22), ("Priority", 9), ("Kind", 8), ("Status", 12),
         ("Duration (s)", 12), ("Failed Step", 46), ("Expected", 46),
@@ -280,7 +533,7 @@ def run_workbook(store, run_id: str) -> bytes:
         _ts(d["started_at"]), _ts(d["finished_at"]),
     ] for d in details], status_cols=(8,), table_name="Results")
 
-    _sheet(wb, "Steps", [
+    _sheet(wb, "Run Steps", [
         ("Test ID", 24), ("Result ID", 18), ("#", 5), ("Step", 74),
         ("Status", 12), ("Duration (s)", 12), ("Error", 80),
     ], [[
@@ -289,7 +542,7 @@ def run_workbook(store, run_id: str) -> bytes:
     ] for d in details for s in d["steps"]],
         status_cols=(5,), table_name="Steps")
 
-    _sheet(wb, "Assertions", [
+    _sheet(wb, "Run Assertions", [
         ("Test ID", 24), ("Result ID", 18), ("Assertion", 60),
         ("Passed", 9), ("Expected", 60), ("Actual", 60),
     ], [[
@@ -298,6 +551,73 @@ def run_workbook(store, run_id: str) -> bytes:
     ] for d in details for a in d["assertions"]],
         status_cols=(4,), table_name="Assertions")
 
+
+def run_workbook(store, run_id: str, tester: str | None = None) -> bytes:
+    """One run, written back onto a copy of the source workbook.
+
+    What comes out is the workbook QA already plans the session in — its nine
+    sheets, its columns, its live Suite Overview counts — with four columns
+    of the ``Test Execution`` sheet filled from this run: Result, Run Date,
+    Tester and Odoo 19 Result. Run Summary, Run Results, Run Steps and Run
+    Assertions are appended after them, so the evidence behind every verdict
+    travels in the same file.
+
+    Only an ``odoo19`` run writes: Odoo 17 Result is the manual Phase-0a
+    baseline and is never touched. A run on any other environment still
+    exports, with the execution columns left as the workbook has them and the
+    reason stated on Run Summary.
+    """
+    run = store.run(run_id)
+    if not run:
+        raise KeyError(run_id)
+    details = [store.result(r["id"]) for r in run["results"]]
+    details = [d for d in details if d]
+
+    path = _template_path()
+    wb = load_workbook(path)
+    if EXEC_SHEET not in wb.sheetnames:
+        raise TemplateInvalid("%s has no '%s' sheet" % (path.name, EXEC_SHEET))
+
+    tester = (tester or os.environ.get("QA_TESTER") or DEFAULT_TESTER).strip()
+    note = [("Source workbook", str(path)),
+            ("Target sheet", EXEC_SHEET),
+            ("Columns written", ", ".join(
+                (EXEC_RESULT, EXEC_RUN_DATE, EXEC_TESTER, EXEC_OUTCOME))),
+            ("Tester", tester)]
+
+    if run["environment"] == EXEC_ENVIRONMENT:
+        audit = _fill_execution_sheet(wb[EXEC_SHEET], details, run, tester)
+        note += [
+            ("Rows filled", "%d of %d workbook case(s) this run covers"
+             % (audit["filled"], audit["covered"])),
+            ("Result values", ", ".join(
+                "%s %d" % (k, v) for k, v in sorted(audit["values"].items()))
+             or "none"),
+            ("Status mapping",
+             "PASSED -> Pass, FAILED -> Fail, ERROR -> Fail, "
+             "BLOCKED -> Blocked, SKIPPED -> N/A. The raw platform status is "
+             "kept verbatim in Odoo 19 Result."),
+            ("Several tests per case",
+             "Worst status wins (FAILED > ERROR > BLOCKED > SKIPPED > "
+             "PASSED); every covering test is listed in Odoo 19 Result."),
+        ]
+        if audit["unmapped"]:
+            note.append(("TC ids not on the sheet",
+                         ", ".join(sorted(audit["unmapped"]))))
+        if audit["results_without_tc"]:
+            note.append(("Results with no workbook TC id",
+                         "%d - on Run Results, with no sheet row to fill"
+                         % audit["results_without_tc"]))
+    else:
+        note.append((
+            "Nothing written",
+            "This run executed on %s. Only %s runs fill the execution "
+            "columns: Odoo 17 Result is the manual Phase-0a baseline "
+            "(Read Me, step 4) and an automated run must not overwrite it."
+            % (run["env_name"], EXEC_ENVIRONMENT)))
+
+    _run_summary_sheet(wb, run, details, note)
+    _run_detail_sheets(wb, details)
     return _save(wb)
 
 

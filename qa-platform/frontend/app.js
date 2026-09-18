@@ -545,7 +545,7 @@ async function viewRun(runId, groupId) {
       ${exportMenu([
         { head: "This run" },
         { href: `/api/runs/${runId}/export.xlsx`, label: "Full detail (.xlsx)",
-          note: "Summary · results · every step · every assertion" },
+          note: "The source workbook, Test Execution filled · plus every step and assertion" },
         { href: `/api/runs/${runId}/export.md`, label: "Detailed report — all cases (.md)",
           note: "One section per case, steps and assertions expanded" },
         { hr: true },
@@ -1103,7 +1103,7 @@ async function viewRuns() {
         <span class="nowrap">
           ${r.group_id ? `<a href="#/compare/${esc(r.group_id)}"><button class="ghost small">Compare</button></a>` : ""}
           <a href="/api/runs/${esc(r.id)}/export.xlsx" download
-             title="Full detail workbook"><button class="ghost small">.xlsx</button></a>
+             title="Source workbook with Test Execution filled from this run"><button class="ghost small">.xlsx</button></a>
           <a href="#/run/${esc(r.id)}${r.group_id ? `?group=${esc(r.group_id)}` : ""}"><button class="secondary small">Open</button></a>
         </span>
       </div>`).join("") || "<div class='empty'>No runs yet.</div>"}</div>`;

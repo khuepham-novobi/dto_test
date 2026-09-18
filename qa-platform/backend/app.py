@@ -359,13 +359,23 @@ def api_export_testcases(all: bool = False):
 
 
 @app.get("/api/runs/{run_id}/export.xlsx")
-def api_export_run_xlsx(run_id: str):
-    """One run in full: summary, results, every step, every assertion."""
+def api_export_run_xlsx(run_id: str, tester: str | None = None):
+    """One run written back onto a copy of the source workbook.
+
+    Same nine sheets QA plans the session in, with Result / Run Date /
+    Tester / Odoo 19 Result filled on `Test Execution`, plus this run's
+    summary, results, steps and assertions appended. `tester` overrides the
+    name written into the Tester column for this export only.
+    """
     try:
-        payload = exporters.run_workbook(store, run_id)
+        payload = exporters.run_workbook(store, run_id, tester=tester)
     except KeyError:
         raise HTTPException(404, "Run not found")
-    return _xlsx(payload, f"{run_id}-detail-{_stamp()}.xlsx")
+    except exporters.TemplateUnusable as exc:
+        # Falling back to a bespoke layout would quietly hand QA a file they
+        # cannot paste into the workbook — better to say what is wrong.
+        raise HTTPException(503, str(exc))
+    return _xlsx(payload, f"{run_id}-test-execution-{_stamp()}.xlsx")
 
 
 @app.get("/api/runs/{run_id}/export.md")

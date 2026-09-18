@@ -176,21 +176,61 @@ Open **http://127.0.0.1:8000**.
 |---|---|---|---|
 | Workflows / workflow page | Export | `DataOne-TestCases-in-scope-*.xlsx` | Every in-scope test case, one row each, plus a Summary tab and a per-workflow rollup |
 | Workflows / workflow page | Export | `DataOne-TestCases-all-*.xlsx` | The same for every workflow in the workbook, in scope or not |
-| Run page | Export | `RUN-*-detail-*.xlsx` | 4 tabs: Summary, Results, Steps, Assertions — one row per step and per assertion |
+| Run page | Export | `RUN-*-test-execution-*.xlsx` | A copy of the source workbook with `Test Execution` filled from the run (see below), plus Run Summary / Run Results / Run Steps / Run Assertions appended |
 | Run page | Export | `RUN-*.md` | Detailed Markdown, one section per case: steps, assertions, expected vs actual, error, artifacts |
 | Run page | Export | `RUN-*-failed-error-*.md` | The same, filtered to FAILED and ERROR — the file to hand to Claude Code |
 | Run page | Export | `RUN-*-blocked-*.md` | BLOCKED cases with the recorded block reason |
 | Result page, result row, TC history | `.md` | `TEST-*-RES-*.md` | One case, fully expanded |
-| Run history | `.xlsx` | `RUN-*-detail-*.xlsx` | The full run workbook, without opening the run |
+| Run history | `.xlsx` | `RUN-*-test-execution-*.xlsx` | The same workbook, without opening the run |
 
 The same files are available directly:
 
 ```
 GET /api/export/testcases.xlsx[?all=true]
-GET /api/runs/<run_id>/export.xlsx
+GET /api/runs/<run_id>/export.xlsx[?tester=Name]
 GET /api/runs/<run_id>/export.md[?only=FAILED,ERROR]
 GET /api/results/<result_id>/export.md
 ```
+
+### The run export fills the source workbook
+
+QA plans the session in `DataOne_v19_Test_Suite_and_Workflows_v1.0.xlsx` and
+signs it off in the same file, so the run export hands back that shape rather
+than a layout of its own: the same nine sheets, the same columns, and the
+`Suite Overview` counts recalculating live off the Result column.
+
+Four columns of `Test Execution` are written, and nothing else — no other
+cell, no styling, and no row ever moves. Rows are matched by the `TC ID` in
+the sheet itself, so a workbook revision that adds or reorders rows cannot put
+a verdict on the wrong case.
+
+| Column | Filled with |
+|---|---|
+| `Result` | The run status, inside the sheet's dropdown vocabulary: PASSED → `Pass`, FAILED → `Fail`, ERROR → `Fail`, BLOCKED → `Blocked`, SKIPPED → `N/A`. Coloured green / red / orange per the Read Me. |
+| `Run Date` | The date the case finished, `yyyy-mm-dd`. |
+| `Tester` | `QA Automation Platform`, or `?tester=` / `$QA_TESTER`. |
+| `Odoo 19 Result` | The evidence: every covering test, its raw platform status, the failed step, expected vs actual, and the error. |
+
+Rules worth knowing:
+
+* **Only `odoo19` runs write.** `Odoo 17 Result` is the manual Phase-0a
+  baseline (Read Me, step 4) and an automated run must never overwrite it. A
+  v17 run still exports, with the execution columns untouched and the reason
+  on `Run Summary`.
+* **A case covered by several tests gets the worst status**
+  (FAILED > ERROR > BLOCKED > SKIPPED > PASSED); every covering test is still
+  listed in `Odoo 19 Result`.
+* **Cases the run did not touch keep `Not Run`.**
+* `Run Summary` records the source workbook, the mapping used, how many rows
+  were filled, and any TC id the run reported that the sheet does not carry.
+
+The workbook itself is only ever read. It is looked for in `$QA_WORKBOOK`,
+then `data/`, `/workbook/` (the docker mount), `~/Downloads/`, then whatever
+`scripts/sync_registry.py` last synced from — finally any
+`DataOne_v19_Test_Suite_and_Workflows_v1.0*.xlsx` in those folders, newest
+first. **Drop the current revision in `qa-platform/data/` to pin it.** With no
+workbook anywhere the export returns 503 rather than quietly falling back to a
+layout QA cannot paste into.
 
 Reports are regenerated from the same persisted rows with:
 
