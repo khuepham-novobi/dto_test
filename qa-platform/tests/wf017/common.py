@@ -559,14 +559,34 @@ def fixture_source_id(ctx) -> int:
     return rows[0]["id"]
 
 
-def _journal_code(suffix="") -> str:
-    """A short, token-scoped journal code.
+_JOURNAL_SEQ = {"n": 0}
 
-    ``account.journal.code`` is length-limited and unique per company, so
-    it carries the token rather than the marker word; the NAME carries the
-    marker, and ``sweep_wf017`` matches on the name.
+
+def _journal_code(suffix="") -> str:
+    """A short, token-scoped journal code, UNIQUE PER CALL.
+
+    ``account.journal.code`` is ``size=5`` and unique per company — measured
+    on d1v19. The previous version derived the whole code from the
+    execution token, so every journal a case created inside one run got the
+    SAME code and the second create raised "Journal codes must be unique
+    per company". TC312 and TC313 both build more than one journal, and
+    both died on it.
+
+    The layout is one marker character, two token characters and a
+    two-character counter, which is exactly five and leaves the code
+    traceable to its run. The NAME still carries the marker, and
+    ``sweep_wf017`` still matches on the name.
     """
-    return f"{MARK[:2]}{fixture_token()[:3].upper()}{suffix}"
+    _JOURNAL_SEQ["n"] += 1
+    alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    counter = _JOURNAL_SEQ["n"] % 1296          # two base-36 characters
+    tag = alphabet[counter // 36] + alphabet[counter % 36]
+    # `suffix` is kept in the signature because callers pass it to mean "a
+    # different family of journal"; it is folded into the counter space
+    # rather than appended, because five characters is the whole budget.
+    if suffix:
+        tag = suffix[0].upper() + alphabet[counter % 36]
+    return f"{MARK[:1]}{fixture_token()[:2].upper()}{tag}"
 
 
 def make_journal(ctx, source_id=None, label="Misc",

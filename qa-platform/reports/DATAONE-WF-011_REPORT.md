@@ -1,6 +1,6 @@
 # DATAONE-WF-011 Report — Delivery, Boxing, Blind Ship & Packing Documents
 
-Generated 2026-09-18 17:29 by `scripts/gen_reports.py` from persisted execution results (`data/results.db`) and the workbook-synced registry. Expected results are the workbook's, verbatim.
+Generated 2026-09-18 17:41 by `scripts/gen_reports.py` from persisted execution results (`data/results.db`) and the workbook-synced registry. Expected results are the workbook's, verbatim.
 
 ## Counts
 
@@ -45,8 +45,8 @@ Generated 2026-09-18 17:29 by `scripts/gen_reports.py` from persisted execution 
 | DATAONE-TC163 | One Delivery Slip click prints every non-cancelled outgoing picking of | P0 | AUTOMATED | NOT_RUN | FAIL | NOT_COMPARED |
 | DATAONE-TC164 | The Blind Packing Slip carries no header, no footer, no customer block | P0 | AUTOMATED | NOT_RUN | FAIL | NOT_COMPARED |
 | DATAONE-TC165 | The packing slip carries the shipping/tracking/pieces/weight table and | P1 | AUTOMATED | NOT_RUN | BLOCKED | BLOCKED |
-| DATAONE-TC166 | The delivery's Journal Entries stat button opens its valuation entries | P1 | AUTOMATED | NOT_RUN | ERROR | NOT_COMPARED |
-| DATAONE-TC168 | Recomputing account_move_ids over several pickings does not raise a si | P1 | AUTOMATED | NOT_RUN | ERROR | NOT_COMPARED |
+| DATAONE-TC166 | The delivery's Journal Entries stat button opens its valuation entries | P1 | AUTOMATED | NOT_RUN | FAIL | NOT_COMPARED |
+| DATAONE-TC168 | Recomputing account_move_ids over several pickings does not raise a si | P1 | AUTOMATED | NOT_RUN | FAIL | NOT_COMPARED |
 
 ## Failure notes (triage input)
 
@@ -57,5 +57,5 @@ Generated 2026-09-18 17:29 by `scripts/gen_reports.py` from persisted execution 
 - **DATAONE-TC161** [Odoo 19 → FAIL / ASSERTION] the delivery is assigned with 10 units reserved: expected {'state': 'assigned', 'reserved': [10.0]}, got {'state': 'confirmed', 'reserved': [0.0]}
 - **DATAONE-TC163** [Odoo 19 → FAIL / ASSERTION] PACKING SLIP occurs once per non-cancelled outgoing picking of the order: expected 2, got 0
 - **DATAONE-TC164** [Odoo 19 → FAIL / ASSERTION] the company header is suppressed at source — the blind template sets report_header_style and the layout's header div renders it (report_ship_blind.xml:6; v17 web/views/report_templates.xml:492, v19 keeps the hook on external_layout_bold ONLY at :439) — and the
-- **DATAONE-TC166** [Odoo 19 → ERROR / AUTOMATION_ERROR] OdooRPCError: product.category.read failed: Invalid field 'property_stock_account_output_categ_id' on 'product.category'
-- **DATAONE-TC168** [Odoo 19 → ERROR / AUTOMATION_ERROR] OdooRPCError: product.category.read failed: Invalid field 'property_stock_account_output_categ_id' on 'product.category'
+- **DATAONE-TC166** [Odoo 19 → FAIL / ASSERTION] the combined stock.picking form carries the fa-book Journal Entries stat button, its invisible modifier and the field that modifier reads (dto_stock/views/stock_picking_views.xml:8-18): expected {'present': True, 'type': 'object', 'class': 'oe_stat_button', 'i
+- **DATAONE-TC168** [Odoo 19 → FAIL / ASSERTION] reading account_move_ids over several pickings raises nothing: expected {'raised': False, 'expected_singleton_error': False}, got {'raised': True, 'expected_singleton_error': True}

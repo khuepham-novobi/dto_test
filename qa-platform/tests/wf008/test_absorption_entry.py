@@ -56,7 +56,8 @@ the line count and on the labour/overhead pairs. Those failures ARE the
 specification.
 """
 from framework.registry import test_case
-from tests.wf008.common import (CATALOGUE_RATE, COMPONENT_TOTAL,  # noqa: F401
+from tests.wf008.common import (require_exclusive_pools,  # noqa: F401
+                                CATALOGUE_RATE, COMPONENT_TOTAL,  # noqa: F401
                                 DUPLICATE_POOL_MESSAGE,
                                 EMPLOYEE_HOURLY_COST, LABOUR_MINUTES,
                                 LABOUR_SWITCH, LABOUR_TOTAL, MARK, MO_QTY,
@@ -208,6 +209,7 @@ def test_tc234(ctx):
                 analytic={str(overlay): 100} if overlay else None)
             pools = live_pools(rpc)
             ctx.log(f"pools on the database: {pools!r}")
+            require_exclusive_pools(ctx, 1)
             ctx.check("overhead pools in force", 1, len(pools))
             ctx.check("the pool's rate is a FRACTION, not a percent",
                       PINNED_RATE, round(pools[0]["percentage"], 6))
@@ -438,6 +440,7 @@ def test_tc235(ctx):
             pool_id = ensure_pool(
                 ctx, "Factory Overhead", PINNED_RATE,
                 expense_account_id=env["overhead_account"]["id"])
+            require_exclusive_pools(ctx, 1)
             ctx.check("overhead pools in force", 1, len(live_pools(rpc)))
 
         with ctx.step("Steps 1-3: the same 10-unit MO with the same 300 "
@@ -569,6 +572,7 @@ def test_tc236(ctx):
                       "off — that is the whole point of step 10"):
             ensure_pool(ctx, "Factory Overhead", PINNED_RATE,
                         expense_account_id=env["overhead_account"]["id"])
+            require_exclusive_pools(ctx, 1)
             ctx.check("overhead pools in force", 1, len(live_pools(rpc)))
 
         with ctx.step("Steps 1-3: the same 10-unit MO with 300 minutes, "
@@ -690,6 +694,7 @@ def test_tc237(ctx):
                       "variable is the two switches"):
             ensure_pool(ctx, "Factory Overhead", PINNED_RATE,
                         expense_account_id=env["overhead_account"]["id"])
+            require_exclusive_pools(ctx, 1)
             ctx.check("overhead pools in force", 1, len(live_pools(rpc)))
 
         with ctx.step("Steps 1-2: build, time and complete the MO"):
@@ -802,6 +807,7 @@ def test_tc238(ctx):
                 expense_account_id=env["overhead_account"]["id"])
             pools = live_pools(rpc)
             ctx.log(f"pools: {pools!r}")
+            require_exclusive_pools(ctx, 2)
             ctx.check("overhead pools in force", 2, len(pools))
             ctx.check("pools with no expense account", [],
                       [p["name"] for p in pools
@@ -1105,6 +1111,7 @@ def test_tc241(ctx):
                 analytic={str(overlay_b): 100} if overlay_b else None)
             pools = live_pools(rpc)
             ctx.log(f"pools: {pools!r}")
+            require_exclusive_pools(ctx, 2)
             ctx.check("overhead pools in force", 2, len(pools))
             ctx.check("percentages are stored as fractions",
                       [0.05, 0.10],
@@ -1275,6 +1282,7 @@ def test_tc243(ctx):
         with ctx.step("One pool at the catalogue rate 0.10"):
             ensure_pool(ctx, "Factory Overhead", CATALOGUE_RATE,
                         expense_account_id=env["overhead_account"]["id"])
+            require_exclusive_pools(ctx, 1)
             ctx.check("overhead pools in force", 1, len(live_pools(rpc)))
 
         with ctx.step("Step 1: a confirmed 10-unit MO with components "

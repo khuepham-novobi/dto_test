@@ -1,6 +1,6 @@
 # DATAONE-WF-021 Report — Cycle Counting and Inventory Adjustment
 
-Generated 2026-09-18 17:29 by `scripts/gen_reports.py` from persisted execution results (`data/results.db`) and the workbook-synced registry. Expected results are the workbook's, verbatim.
+Generated 2026-09-18 17:40 by `scripts/gen_reports.py` from persisted execution results (`data/results.db`) and the workbook-synced registry. Expected results are the workbook's, verbatim.
 
 ## Counts
 
@@ -9,7 +9,7 @@ Generated 2026-09-18 17:29 by `scripts/gen_reports.py` from persisted execution 
 - Manual-only: **0**
 - Currently BLOCKED (either environment): **2**
 - Odoo 17: PASS 2 / FAIL 0 / BLOCKED 0 / SKIPPED 0 / not executed 11
-- Odoo 19: PASS 1 / FAIL 10 / BLOCKED 2 / not executed 0
+- Odoo 19: PASS 2 / FAIL 9 / BLOCKED 2 / not executed 0
 
 ## Cross-version classification
 
@@ -40,7 +40,7 @@ Generated 2026-09-18 17:29 by `scripts/gen_reports.py` from persisted execution 
 | DATAONE-TC175 | Changing a product's level re-schedules every one of its quants in the | P1 | AUTOMATED | NOT_RUN | FAIL | NOT_COMPARED |
 | DATAONE-TC176 | Cycle-count columns, search fields and group-bys are available on prod | P2 | AUTOMATED | NOT_RUN | BLOCKED | BLOCKED |
 | DATAONE-TC177 | v19 detector: the required-level rule must still be enforced after typ | P0 | AUTOMATED | NOT_RUN | FAIL | NOT_COMPARED |
-| DATAONE-TC251 | Inventory adjustment through a tagged virtual location | P0 | AUTOMATED | NOT_RUN | ERROR | NOT_COMPARED |
+| DATAONE-TC251 | Inventory adjustment through a tagged virtual location | P0 | AUTOMATED | NOT_RUN | PASS | NOT_COMPARED |
 
 ## Failure notes (triage input)
 
@@ -53,4 +53,3 @@ Generated 2026-09-18 17:29 by `scripts/gen_reports.py` from persisted execution 
 - **DATAONE-TC174** [Odoo 19 → FAIL / ASSERTION] one valuation entry, two lines, valued at the variance times the product's cost: expected {'entries': 1, 'lines': 2, 'debit': 21.0, 'credit': 21.0}, got {'entries': 0, 'lines': 0, 'debit': 0, 'credit': 0}
 - **DATAONE-TC175** [Odoo 19 → FAIL / ASSERTION] Physical Inventory lists all three quants: expected [190290, 190291, 190292, 190293], got [190291, 190292, 190293]
 - **DATAONE-TC177** [Odoo 19 → FAIL / ASSERTION] storable products with no cycle-count level is zero, or equal to the recorded v17 baseline — any increase is the silent defect expressed as unscheduled products: expected True, got 'current=613 baseline=282 of 22757 storable products'
-- **DATAONE-TC251** [Odoo 19 → ERROR / AUTOMATION_ERROR] OdooRPCError: account.account.search_read failed: Invalid field account.account.deprecated in condition ('deprecated', '=', False)
