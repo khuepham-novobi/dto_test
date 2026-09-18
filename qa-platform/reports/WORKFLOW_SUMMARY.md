@@ -1,19 +1,19 @@
 # DataOne 17 → 19 — In-Scope Workflow Summary
 
-Generated 2026-09-18 15:44. Source: persisted executions in `data/results.db` + the workbook-synced registry (332 in-scope test cases across 23 workflows).
+Generated 2026-09-18 16:03. Source: persisted executions in `data/results.db` + the workbook-synced registry (332 in-scope test cases across 23 workflows).
 
 ## Headline numbers
 
 - **Total cases:** 332
-- **Automated (covered by platform tests):** 299
+- **Automated (covered by platform tests):** 304
 - **Manual-only:** 22
-- **Blocked (any environment):** 54
+- **Blocked (any environment):** 55
 - **Odoo 17:** PASS 54 / FAIL 18
-- **Odoo 19:** PASS 116 / FAIL 137
+- **Odoo 19:** PASS 118 / FAIL 139
 - **Regression candidates:** 16 (pending triage)
 - **Fixed cases:** 6
-- **Automation coverage:** 90.1% of all in-scope cases (299/332)
-- **Execution coverage:** v17 30.1% (100/332) · v19 90.1% (299/332)
+- **Automation coverage:** 91.6% of all in-scope cases (304/332)
+- **Execution coverage:** v17 30.1% (100/332) · v19 91.6% (304/332)
 
 ## Classification totals
 
@@ -23,8 +23,8 @@ Generated 2026-09-18 15:44. Source: persisted executions in `data/results.db` + 
 | REGRESSION_CANDIDATE | 16 |
 | FIXED | 6 |
 | SAME_FAILURE | 11 |
-| BLOCKED | 54 |
-| NOT_COMPARED | 207 |
+| BLOCKED | 55 |
+| NOT_COMPARED | 206 |
 
 ## Per workflow
 
@@ -52,7 +52,7 @@ Generated 2026-09-18 15:44. Source: persisted executions in `data/results.db` + 
 | DATAONE-WF-022 | Scrap with Defect Coding and Approval | 7 | 7 | 0/0 | 5/1 | 0 | 0 |
 | DATAONE-WF-024 | RMA: Customer and Vendor Returns | 8 | 8 | 0/0 | 2/5 | 0 | 0 |
 | DATAONE-WF-025 | Gross Requirements Planning | 7 | 7 | 0/0 | 5/0 | 0 | 0 |
-| DATAONE-WF-026 | Historical Data Migration Import | 23 | 8 | 0/0 | 7/1 | 0 | 0 |
+| DATAONE-WF-026 | Historical Data Migration Import | 23 | 13 | 0/0 | 9/3 | 0 | 0 |
 
 ## Reading guide
 

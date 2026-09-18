@@ -295,6 +295,20 @@ def sweep_wf026(rpc):
             except OdooRPCError:
                 pass
 
+    # Receipts the imported POs leave behind (see TC398's finding). They
+    # must be swept or every run adds more to the warehouse's to-do list.
+    for pick_id in rpc.search("stock.picking",
+                              [("origin", "like", f"{MARK}-%")]):
+        for method in ("action_cancel",):
+            try:
+                rpc.call("stock.picking", method, [pick_id])
+            except OdooRPCError:
+                pass
+        try:
+            rpc.call("stock.picking", "unlink", [pick_id])
+        except OdooRPCError:
+            pass
+
     sweep_model(rpc, "mrp.bom", [("code", "like", f"{MARK}-%")])
     sweep_model(rpc, WIZARD, [("file_name", "like", f"{MARK}-%")])
     sweep_products(rpc, MARK)
@@ -341,3 +355,40 @@ def product_code(rpc, product_id: int) -> str:
 
 def partner_name(rpc, partner_id: int) -> str:
     return rpc.read("res.partner", [partner_id], ["name"])[0]["name"]
+
+
+def fresh_rpc(ctx):
+    """A brand-new authenticated session against the same target.
+
+    The workbook's GATE steps say ``invalidate_recordset()``. That method is
+    not reachable over RPC — Odoo refuses it as private
+    ("Private methods (such as 'mrp.production.invalidate_recordset') cannot
+    be called remotely"), verified on d1v19.
+
+    A second session is the stronger equivalent and is what these cases use
+    instead: it is a different transaction with an empty environment cache,
+    so every non-stored compute is recomputed from the database rather than
+    served from a cache the first session warmed. That is precisely the
+    condition the suppression layer has to survive — and the one under which
+    a lost override shows up as a silent zero. Documented here per hard
+    rule 5, because it is an adaptation of the workbook's step.
+    """
+    from adapters.odoo19 import Odoo19Adapter
+    return Odoo19Adapter(ctx.env).rpc
+
+
+#: The observable consequence of each suppressed compute — what a re-read in
+#: a fresh session must NOT change. This is the behavioural form of the C13
+#: guard in dto_base/hooks.py:711-734, which cannot be inspected over RPC
+#: (the MRO is not exposed) but whose failure IS visible here: if an override
+#: stops being reached, core recomputes from movements that do not exist and
+#: the value collapses to zero or to an empty status.
+SUPPRESSED_OBSERVABLES = {
+    "purchase.order": ["state", "invoice_status", "receipt_status",
+                       "effective_date", "receipt_number"],
+    "purchase.order.line": ["qty_invoiced"],
+    "sale.order": ["state", "invoice_status", "delivery_status",
+                   "effective_date", "mrp_production_count"],
+    "mrp.production": ["state", "qty_produced", "qty_producing",
+                       "import_qty_produced"],
+}
