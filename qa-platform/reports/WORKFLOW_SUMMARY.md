@@ -1,6 +1,6 @@
 # DataOne 17 → 19 — In-Scope Workflow Summary
 
-Generated 2026-09-05 04:10. Source: persisted executions in `data/results.db` + the workbook-synced registry (156 in-scope test cases across 9 workflows).
+Generated 2026-09-10 06:14. Source: persisted executions in `data/results.db` + the workbook-synced registry (156 in-scope test cases across 9 workflows).
 
 ## Headline numbers
 

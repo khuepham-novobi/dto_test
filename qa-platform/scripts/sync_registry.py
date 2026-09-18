@@ -57,25 +57,57 @@ ESTIMATE_SHEET = "Estimate and Timeline"
 XCUT = "DATAONE-WF-XCUT"
 XCUT_NAME = "Cross-cutting (no single workflow)"
 
-# Scope of the current QA phase — the workflows we are generating suites for.
-# Everything is imported; out-of-scope workflows are flagged so the UI can
-# filter. Extend this set as later waves are picked up.
-IN_SCOPE_WORKFLOWS = {
-    # --- wave 1
-    "DATAONE-WF-020",   # Supplier Master Import from Workday
-    "DATAONE-WF-003",   # Quotation revision
+# Scope of the current QA wave — the workflows the dashboard counts and the
+# "Run in-scope workflows" button executes.
+#
+# DERIVED, not hand-maintained. It used to be a literal set, and it drifted
+# twice: suites were written for a workflow, ran fine as part of the full
+# suite, and were invisible on the dashboard because nobody remembered to add
+# the id here. The second time it hid 13 workflows and ~150 test cases, and
+# read as "the deploy did not work".
+#
+# A workflow is in scope when a registered test names it. That is the same
+# fact the runner already acts on, so the two can no longer disagree.
+
+#: Workflows to force into scope even with no automation yet — for a wave
+#: that has been committed to but not yet written. Normally empty.
+FORCE_IN_SCOPE: set = set()
+
+#: Used only when test discovery cannot run (a syntax error in a suite, or
+#: the script invoked outside the app environment). Keeping the original
+#: wave-1 set means a broken import degrades to the old behaviour instead of
+#: emptying the dashboard.
+_FALLBACK_IN_SCOPE = {
     "DATAONE-WF-002",   # Quotation -> sales order confirmation
+    "DATAONE-WF-003",   # Quotation revision
     "DATAONE-WF-013",   # Customer Invoice Posting: COGS and Revenue Recognition
-    # --- wave 2 (Stage 3). These carry registered automation and run as part
-    # of the full suite; leaving them out of this set hid them from the
-    # workflow dashboard, so the page showed 100 test cases while the suite
-    # was executing 141.
-    "DATAONE-WF-005",   # MO Operation Type
-    "DATAONE-WF-006",   # Manufacturing Execution on the Shop Floor
-    "DATAONE-WF-007",   # Serial number naming and gates
-    "DATAONE-WF-009",   # Component replacement and substitution
-    "DATAONE-WF-025",   # Inventory availability report
+    "DATAONE-WF-020",   # Supplier Master Import from Workday
 }
+
+
+def discover_automated_workflows() -> set:
+    """Every workflow that a registered test under tests/ names.
+
+    Imports the same registry the runner uses, so "has automation" means
+    exactly what it means at run time.
+    """
+    try:
+        if str(ROOT) not in sys.path:
+            sys.path.insert(0, str(ROOT))
+        from framework import registry
+        found = {t.workflow for t in registry.discover() if t.workflow}
+        if not found:
+            raise RuntimeError("registry.discover() returned no workflows")
+        return found
+    except Exception as exc:                                  # noqa: BLE001
+        print("WARNING: could not discover registered tests (%s). Falling "
+              "back to the wave-1 workflow set, so the dashboard will "
+              "under-report scope until this is fixed." % exc,
+              file=sys.stderr, flush=True)
+        return set(_FALLBACK_IN_SCOPE)
+
+
+IN_SCOPE_WORKFLOWS = discover_automated_workflows() | FORCE_IN_SCOPE
 
 _WF_RE = re.compile(r"DATAONE-WF-\d{3}")
 

@@ -10,6 +10,10 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
+import os
+import subprocess
+import sys
 import uuid
 from pathlib import Path
 
@@ -33,6 +37,7 @@ store.load_registry(settings.data_dir / "test_registry.json")
 _orphans = store.reconcile_orphans()
 
 FRONTEND = ROOT / "frontend"
+log = logging.getLogger(__name__)
 
 
 def in_scope_features() -> list[str]:
@@ -190,13 +195,62 @@ def api_start_run(req: RunRequest):
             "selected": len(selected), "selection": what}
 
 
+def find_workbook() -> Path | None:
+    """The Excel knowledge base, wherever this deployment keeps it."""
+    env = os.environ.get("QA_WORKBOOK")
+    if env and Path(env).exists():
+        return Path(env)
+    for directory in (Path("/workbook"), ROOT.parent, ROOT / "data"):
+        if not directory.is_dir():
+            continue
+        books = sorted(b for b in directory.glob("*.xlsx")
+                       if not b.name.startswith(("~$", ".")))
+        if books:
+            return books[0]
+    return None
+
+
 @app.post("/api/registry/reload")
 def api_registry_reload():
-    """Re-import the test packages and re-sync the workbook registry, so
-    newly added or edited test scripts become runnable without a restart."""
+    """Re-import the test packages AND regenerate the workbook registry.
+
+    Regenerating matters: `in_scope` is derived from which workflows have
+    registered automation, so adding a suite changes it. Reloading only the
+    existing JSON left that flag stale — a new suite ran in the full suite
+    but its workflow stayed off the dashboard, which read as "the deploy did
+    nothing" after a deploy and a hard refresh. This endpoint is what the
+    deploy console calls, so it has to do the whole job.
+    """
     n_tests = len(registry.reload())
-    n_cases = store.load_registry(settings.data_dir / "test_registry.json")
-    return {"tests": n_tests, "test_cases": n_cases}
+    registry_json = settings.data_dir / "test_registry.json"
+
+    synced, sync_error = False, None
+    workbook = find_workbook()
+    if workbook:
+        try:
+            proc = subprocess.run(
+                [sys.executable, str(ROOT / "scripts" / "sync_registry.py"),
+                 "--workbook", str(workbook)],
+                cwd=str(ROOT), capture_output=True, text=True, timeout=300)
+            if proc.returncode == 0:
+                synced = True
+            else:
+                sync_error = (proc.stderr or proc.stdout or "").strip()[-500:]
+        except Exception as exc:                              # noqa: BLE001
+            sync_error = str(exc)
+    else:
+        sync_error = ("no .xlsx found - set QA_WORKBOOK or mount the workbook "
+                      "at /workbook")
+    if sync_error:
+        # Never fail the reload on this: the test scripts have already been
+        # re-imported and the previous registry is still usable. Say so
+        # instead, so a stale dashboard has a visible reason.
+        log.warning("registry sync skipped: %s", sync_error)
+
+    n_cases = store.load_registry(registry_json)
+    return {"tests": n_tests, "test_cases": n_cases,
+            "workbook": str(workbook) if workbook else None,
+            "synced": synced, "sync_error": sync_error}
 
 
 @app.get("/api/runs")
