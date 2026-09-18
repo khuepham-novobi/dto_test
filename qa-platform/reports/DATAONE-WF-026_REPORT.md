@@ -1,6 +1,6 @@
 # DATAONE-WF-026 Report — Historical Data Migration Import
 
-Generated 2026-09-18 16:26 by `scripts/gen_reports.py` from persisted execution results (`data/results.db`) and the workbook-synced registry. Expected results are the workbook's, verbatim.
+Generated 2026-09-18 16:39 by `scripts/gen_reports.py` from persisted execution results (`data/results.db`) and the workbook-synced registry. Expected results are the workbook's, verbatim.
 
 ## Counts
 
@@ -9,7 +9,7 @@ Generated 2026-09-18 16:26 by `scripts/gen_reports.py` from persisted execution 
 - Manual-only: **1**
 - Currently BLOCKED (either environment): **1**
 - Odoo 17: PASS 0 / FAIL 0 / BLOCKED 0 / SKIPPED 0 / not executed 23
-- Odoo 19: PASS 17 / FAIL 4 / BLOCKED 1 / not executed 1
+- Odoo 19: PASS 18 / FAIL 4 / BLOCKED 1 / not executed 0
 
 ## Cross-version classification
 
@@ -46,7 +46,7 @@ Generated 2026-09-18 16:26 by `scripts/gen_reports.py` from persisted execution 
 | DATAONE-TC451 | The jobrunner starts and logs queue job runner ready for db dataone | P0 | AUTOMATED | NOT_RUN | BLOCKED | BLOCKED |
 | DATAONE-TC452 | A job progresses Pending → Enqueued → Started → Done | P0 | AUTOMATED | NOT_RUN | PASS | NOT_COMPARED |
 | DATAONE-TC453 | A failed job notifies every Job Queue Manager and records the tracebac | P1 | AUTOMATED | NOT_RUN | PASS | NOT_COMPARED |
-| DATAONE-TC454 | The Requeue Jobs wizard returns a failed job to Pending and it complet | P1 | AUTOMATED | NOT_RUN | RUNNING | NOT_COMPARED |
+| DATAONE-TC454 | The Requeue Jobs wizard returns a failed job to Pending and it complet | P1 | AUTOMATED | NOT_RUN | PASS | NOT_COMPARED |
 | DATAONE-TC455 | The Set to Done and Cancel wizards close jobs without executing them | P2 | AUTOMATED | NOT_RUN | PASS | NOT_COMPARED |
 | DATAONE-TC456 | The garbage collector returns jobs Enqueued for more than 5 minutes to | P1 | AUTOMATED | NOT_RUN | FAIL | NOT_COMPARED |
 | DATAONE-TC457 | The autovacuum deletes Done jobs past the channel's Removal Interval | P2 | AUTOMATED | NOT_RUN | PASS | NOT_COMPARED |
