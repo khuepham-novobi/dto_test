@@ -66,6 +66,21 @@ from tests.wf012.common import (IRM_RECIPIENT, MARK,  # noqa: F401
                                 require_cogs_analytics, require_mail_offline,
                                 sweep_wf012, trace, validate_picking)
 
+def _move_label(rpc, label: str) -> dict:
+    """The field that carries a stock move's own description, if any.
+
+    v17 had ``stock.move.name`` (required). v19 REMOVED it — measured:
+    "Invalid field 'name' on model 'stock.move'" — and a move is now
+    described by its product, with ``description_picking`` as the optional
+    override. These two fixture pickings are found through their ``origin``,
+    which still carries the marker, so an unlabelled move costs nothing.
+    """
+    for field in ("name", "description_picking"):
+        if rpc.field_exists("stock.move", field):
+            return {field: label}
+    return {}
+
+
 # The guard the port adds. Its presence in the LIVE code decides which
 # behaviour the empty-memo step must assert.
 MEMO_GUARD_SNIPPET = "or ''"
@@ -403,7 +418,7 @@ def test_tc290(ctx):
                 "location_dest_id": m2o_id(
                     type_row["default_location_dest_id"]),
                 "move_ids": [(0, 0, {
-                    "name": fx(f"{MARK} in"),
+                    **_move_label(rpc, fx(f"{MARK} in")),
                     "product_id": product_id,
                     "product_uom_qty": 1.0,
                     "location_id": m2o_id(type_row["default_location_src_id"]),
@@ -431,7 +446,7 @@ def test_tc290(ctx):
                 "location_id": src,
                 "location_dest_id": dest,
                 "move_ids": [(0, 0, {
-                    "name": fx(f"{MARK} out"),
+                    **_move_label(rpc, fx(f"{MARK} out")),
                     "product_id": product_id,
                     "product_uom_qty": 1.0,
                     "location_id": src,

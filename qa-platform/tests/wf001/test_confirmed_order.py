@@ -353,12 +353,17 @@ def test_tc339(ctx):
             ctx.check_true(
                 "and the price change 20 -> 55 appears too",
                 "55" in note and "20" in note, actual_desc=note)
+            # The activity body renders each tracked line by its PRODUCT,
+            # not by the line description — measured, and the reason
+            # _ensure_known_product now names products after their item
+            # code. So the added and removed items are looked for by the
+            # code they were imported under.
             ctx.check_true(
                 "the added products are named as creates",
-                fx(f"{MARK} D") in note or fx(f"{MARK} E") in note,
+                item_code("ITEM-D") in note or item_code("ITEM-E") in note,
                 actual_desc=note)
             ctx.check_true("and the removed product as a delete",
-                           fx(f"{MARK} C") in note, actual_desc=note)
+                           item_code("ITEM-C") in note, actual_desc=note)
 
         with ctx.step("Steps 12-13: nothing downstream moved and NO "
                       "revision was created — the revision path is for "

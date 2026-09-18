@@ -131,7 +131,12 @@ def _ensure_known_product(ctx, code):
     if found:
         return found[0]["id"]
     from framework.qa_fixtures import with_categ
-    values = {"name": fx(f"{MARK} Finished cable assembly"),
+    # The name carries the item CODE. sale.order's confirmed-order activity
+    # renders each tracked line by its PRODUCT name, not by the line
+    # description, so products that share one name make the create, update
+    # and delete blocks indistinguishable from each other — measured on
+    # TEST-WF001-TC339, where all three lines read "Finished cable assembly".
+    values = {"name": fx(f"{MARK} Finished cable assembly {code}"),
               "default_code": code, "sale_ok": True,
               "taxes_id": [(6, 0, [])]}
     values.update(ctx.adapter.storable_product_values())
