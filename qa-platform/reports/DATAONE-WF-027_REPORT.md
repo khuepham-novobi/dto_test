@@ -1,15 +1,15 @@
 # DATAONE-WF-027 Report — Management Reporting
 
-Generated 2026-09-18 16:39 by `scripts/gen_reports.py` from persisted execution results (`data/results.db`) and the workbook-synced registry. Expected results are the workbook's, verbatim.
+Generated 2026-09-18 16:45 by `scripts/gen_reports.py` from persisted execution results (`data/results.db`) and the workbook-synced registry. Expected results are the workbook's, verbatim.
 
 ## Counts
 
 - Test cases: **23**
-- Automated (covered by platform tests): **7** of 22 automatable
+- Automated (covered by platform tests): **13** of 22 automatable
 - Manual-only: **1**
-- Currently BLOCKED (either environment): **4**
+- Currently BLOCKED (either environment): **5**
 - Odoo 17: PASS 0 / FAIL 0 / BLOCKED 0 / SKIPPED 0 / not executed 23
-- Odoo 19: PASS 2 / FAIL 1 / BLOCKED 4 / not executed 16
+- Odoo 19: PASS 7 / FAIL 1 / BLOCKED 5 / not executed 10
 
 ## Cross-version classification
 
@@ -19,8 +19,8 @@ Generated 2026-09-18 16:39 by `scripts/gen_reports.py` from persisted execution 
 | REGRESSION_CANDIDATE | 0 |
 | FIXED | 0 |
 | SAME_FAILURE | 0 |
-| BLOCKED | 4 |
-| NOT_COMPARED | 19 |
+| BLOCKED | 5 |
+| NOT_COMPARED | 18 |
 
 > REGRESSION_CANDIDATE is not a confirmed regression until failure triage; BLOCKED reflects the missing local Odoo 19 environment (see docs/ENVIRONMENT_STATUS.md).
 
@@ -45,13 +45,13 @@ Generated 2026-09-18 16:39 by `scripts/gen_reports.py` from persisted execution 
 | DATAONE-TC387 | Vendor RMA and Customer RMA menus resolve and open the correct picking | P2 | AUTOMATED | NOT_RUN | PASS | NOT_COMPARED |
 | DATAONE-TC388 | Which ir.ui.view the standard Purchase menu actually serves for purcha | P0 | AUTOMATED | NOT_RUN | BLOCKED | BLOCKED |
 | DATAONE-TC389 | BOM Lines multi-edit changes quantity on every selected line and on th | P1 | AUTOMATED | NOT_RUN | BLOCKED | BLOCKED |
-| DATAONE-TC390 | Dead stock over 2026-01-01 → 2026-08-20 returns TD-P-10 and not TD-P-1 | P0 | PLANNED | NOT_IMPLEMENTED | NOT_IMPLEMENTED | NOT_COMPARED |
-| DATAONE-TC391 | Products created after the Start Date, services and consumables never  | P1 | PLANNED | NOT_IMPLEMENTED | NOT_IMPLEMENTED | NOT_COMPARED |
-| DATAONE-TC392 | A product whose only moves in the window are draft or cancelled still  | P1 | PLANNED | NOT_IMPLEMENTED | NOT_IMPLEMENTED | NOT_COMPARED |
-| DATAONE-TC393 | The dead-stock XLSX has the five named columns, two data rows and the  | P0 | PLANNED | NOT_IMPLEMENTED | NOT_IMPLEMENTED | NOT_COMPARED |
-| DATAONE-TC394 | Download Excel with xlsxwriter absent raises exactly "The xlsxwriter l | P2 | CANDIDATE | NOT_IMPLEMENTED | NOT_IMPLEMENTED | NOT_COMPARED |
-| DATAONE-TC395 | An End Date earlier than the Start Date is accepted and returns every  | P1 | PLANNED | NOT_IMPLEMENTED | NOT_IMPLEMENTED | NOT_COMPARED |
+| DATAONE-TC390 | Dead stock over 2026-01-01 → 2026-08-20 returns TD-P-10 and not TD-P-1 | P0 | AUTOMATED | NOT_RUN | PASS | NOT_COMPARED |
+| DATAONE-TC391 | Products created after the Start Date, services and consumables never  | P1 | AUTOMATED | NOT_RUN | PASS | NOT_COMPARED |
+| DATAONE-TC392 | A product whose only moves in the window are draft or cancelled still  | P1 | AUTOMATED | NOT_RUN | PASS | NOT_COMPARED |
+| DATAONE-TC393 | The dead-stock XLSX has the five named columns, two data rows and the  | P0 | AUTOMATED | NOT_RUN | PASS | NOT_COMPARED |
+| DATAONE-TC394 | Download Excel with xlsxwriter absent raises exactly "The xlsxwriter l | P2 | AUTOMATED | NOT_RUN | BLOCKED | BLOCKED |
+| DATAONE-TC395 | An End Date earlier than the Start Date is accepted and returns every  | P1 | AUTOMATED | NOT_RUN | PASS | NOT_COMPARED |
 
 ## Failure notes (triage input)
 
-- **DATAONE-TC013** [Odoo 19 → FAIL / ASSERTION] the two menu sets are DIFFERENT, so the gate is applied: expected True, got 'admin=[] plain=[]'
+- **DATAONE-TC013** [Odoo 19 → FAIL / ASSERTION] somebody holds the group that gates the Reports app: expected True, got 'no user on this database holds dto_reports.reports_module, and the group is hidden from the Settings UI (D-new-14 deleted its category for v19), so the entire Management Reporting app is 

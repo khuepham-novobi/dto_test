@@ -150,9 +150,11 @@ TURNOVER_ACTION = "turnover_report.action_inventory_turnover_wizard"
 #: missing. Asserted verbatim by TC394.
 ERR_NO_XLSXWRITER = "The xlsxwriter library is not installed"
 
-#: The five columns the dead-stock export must carry (TC393).
-XLSX_COLUMNS = ("Product", "Internal Reference", "Product Category",
-                "On Hand Quantity", "Last Movement Date")
+#: The five columns the dead-stock export carries, read from
+#: models/turnover_wizard.py:83 rather than from the workbook's prose —
+#: the workbook names them loosely and the code is the contract.
+XLSX_COLUMNS = ("Internal Reference", "Name", "Category",
+                "On Hand Quantity", "Created On")
 
 
 # ------------------------------------------------------------ preconditions

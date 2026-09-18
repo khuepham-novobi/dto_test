@@ -1,19 +1,19 @@
 # DataOne 17 → 19 — In-Scope Workflow Summary
 
-Generated 2026-09-18 16:39. Source: persisted executions in `data/results.db` + the workbook-synced registry (355 in-scope test cases across 24 workflows).
+Generated 2026-09-18 16:45. Source: persisted executions in `data/results.db` + the workbook-synced registry (355 in-scope test cases across 24 workflows).
 
 ## Headline numbers
 
 - **Total cases:** 355
-- **Automated (covered by platform tests):** 321
+- **Automated (covered by platform tests):** 327
 - **Manual-only:** 23
-- **Blocked (any environment):** 32
+- **Blocked (any environment):** 33
 - **Odoo 17:** PASS 54 / FAIL 18
-- **Odoo 19:** PASS 22 / FAIL 8
+- **Odoo 19:** PASS 27 / FAIL 8
 - **Regression candidates:** 0 (pending triage)
 - **Fixed cases:** 0
-- **Automation coverage:** 90.4% of all in-scope cases (321/355)
-- **Execution coverage:** v17 28.2% (100/355) · v19 90.4% (321/355)
+- **Automation coverage:** 92.1% of all in-scope cases (327/355)
+- **Execution coverage:** v17 28.2% (100/355) · v19 92.1% (327/355)
 
 ## Classification totals
 
@@ -23,8 +23,8 @@ Generated 2026-09-18 16:39. Source: persisted executions in `data/results.db` + 
 | REGRESSION_CANDIDATE | 0 |
 | FIXED | 0 |
 | SAME_FAILURE | 0 |
-| BLOCKED | 32 |
-| NOT_COMPARED | 323 |
+| BLOCKED | 33 |
+| NOT_COMPARED | 322 |
 
 ## Per workflow
 
@@ -53,7 +53,7 @@ Generated 2026-09-18 16:39. Source: persisted executions in `data/results.db` + 
 | DATAONE-WF-024 | RMA: Customer and Vendor Returns | 8 | 8 | 0/0 | 0/0 | 0 | 0 |
 | DATAONE-WF-025 | Gross Requirements Planning | 7 | 7 | 0/0 | 0/0 | 0 | 0 |
 | DATAONE-WF-026 | Historical Data Migration Import | 23 | 23 | 0/0 | 18/4 | 0 | 0 |
-| DATAONE-WF-027 | Management Reporting | 23 | 7 | 0/0 | 2/1 | 0 | 0 |
+| DATAONE-WF-027 | Management Reporting | 23 | 13 | 0/0 | 7/1 | 0 | 0 |
 
 ## Reading guide
 
