@@ -534,8 +534,14 @@ def test_tc342(ctx):
         menu_id = rpc.ref(WIZARD_MENU_XMLID)
         ctx.log(f"{WIZARD_MENU_XMLID} resolves to {menu_id!r}")
         if menu_id:
+            # v19 renamed ir.ui.menu.groups_id -> group_ids. Resolved
+            # rather than hardcoded so the case reads on both versions.
+            menu_group_field = ("groups_id"
+                                if rpc.field_exists("ir.ui.menu", "groups_id")
+                                else "group_ids")
             menu = rpc.read("ir.ui.menu", [menu_id],
-                            ["name", "parent_id", "action", "groups_id"])[0]
+                            ["name", "parent_id", "action",
+                             menu_group_field])[0]
             ctx.log(f"the Import Workday Requisition menu: {menu!r}")
             ctx.check_true(
                 "its parent anchor resolved — delta §3.5 lists "

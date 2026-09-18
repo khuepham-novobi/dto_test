@@ -634,9 +634,29 @@ def finished_move(rpc, mo_id):
 
 
 def raw_moves(rpc, mo_id):
-    return rpc.search_read(
-        "stock.move", [("raw_material_production_id", "=", mo_id)],
-        ["state", "price_unit", "quantity", "product_id", "scrapped"])
+    """Raw moves of an MO, with the scrap marker under whichever name this
+    version uses.
+
+    v19 removed ``stock.move.scrapped``; a scrapped move is now identified
+    by a set ``scrap_id``. Reading the absent field raises, so the field
+    list is resolved and the result carries a normalised ``scrapped`` key
+    either way — callers stay version-agnostic.
+    """
+    fields = ["state", "price_unit", "quantity", "product_id"]
+    legacy = rpc.field_exists("stock.move", "scrapped")
+    marker = "scrapped" if legacy else (
+        "scrap_id" if rpc.field_exists("stock.move", "scrap_id") else None)
+    if marker:
+        fields.append(marker)
+    rows = rpc.search_read(
+        "stock.move", [("raw_material_production_id", "=", mo_id)], fields)
+    if marker and not legacy:
+        for row in rows:
+            row["scrapped"] = bool(row.get(marker))
+    elif not marker:
+        for row in rows:
+            row["scrapped"] = False
+    return rows
 
 
 def entry_lines(rpc, move_ids, extra_fields=()):

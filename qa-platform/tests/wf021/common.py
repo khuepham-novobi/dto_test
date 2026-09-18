@@ -2033,9 +2033,14 @@ def pick_counterpart_accounts(ctx, count: int = 2,
     """
     rpc = ctx.adapter.rpc
     excluded = [i for i in exclude_ids if i]
-    domain = [("deprecated", "=", False),
-              ("account_type", "in", ["expense", "expense_direct_cost",
-                                      "asset_current"])]
+    # v19 removed account.account.deprecated; an unusable account is now
+    # simply archived, so the equivalent term is active = True. Resolved
+    # rather than hardcoded so this reads on v17 too.
+    domain = ([("deprecated", "=", False)]
+              if rpc.field_exists("account.account", "deprecated")
+              else [("active", "=", True)])
+    domain += [("account_type", "in", ["expense", "expense_direct_cost",
+                                       "asset_current"])]
     if excluded:
         domain.append(("id", "not in", excluded))
     rows = rpc.search_read("account.account", domain, ["code", "name"],

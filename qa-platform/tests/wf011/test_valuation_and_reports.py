@@ -367,12 +367,24 @@ def _valuation_categ(ctx):
             "property_cost_method": "standard"})
         found = [created]
     categ_id = found[0]
-    row = rpc.read("product.category", [categ_id], VALUATION_FIELDS)[0]
+    # v19 removed product.category.property_stock_account_output_categ_id —
+    # measured on d1v19, where product.category carries
+    # property_stock_valuation_account_id and
+    # property_stock_account_production_cost_id but neither the input nor
+    # the output account. Reading an absent field raises, so the list is
+    # narrowed to what this target actually has, and the requirement below
+    # is narrowed with it rather than demanding a field that cannot exist.
+    readable = [f for f in VALUATION_FIELDS
+                if rpc.field_exists("product.category", f)]
+    absent = [f for f in VALUATION_FIELDS if f not in readable]
+    row = rpc.read("product.category", [categ_id], readable)[0]
+    if absent:
+        ctx.log(f"not present on this version, so not read: {absent}")
     ctx.log(f"valuation category {categ_id} {row.get('name')!r} "
             f"(created by this run: {bool(created)}): "
-            + ", ".join(f"{f}={row.get(f)!r}" for f in VALUATION_FIELDS[1:]))
+            + ", ".join(f"{f}={row.get(f)!r}" for f in readable[1:]))
     missing = [f for f in VALUATION_REQUIRED_ACCOUNTS
-               if not m2o_id(row.get(f))]
+               if f in readable and not m2o_id(row.get(f))]
     if row.get("property_valuation") != "real_time" or missing:
         ctx.blocked(
             f"No product category on {ctx.env.key} (db={ctx.env.db}) can "

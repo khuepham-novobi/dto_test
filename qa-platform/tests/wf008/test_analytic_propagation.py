@@ -812,8 +812,13 @@ def test_tc253(ctx):
             uom_field = ("product_uom"
                          if rpc.field_exists("stock.move", "product_uom")
                          else "product_uom_id")
+            # v19 removed stock.move.name (_rec_name = 'reference',
+            # stock/models/stock_move.py:22). dto_purchase's own
+            # test_wf014_open_flags.py:165 records the same fact.
+            name_field = ("name" if rpc.field_exists("stock.move", "name")
+                          else "reference")
             move_id = rpc.create("stock.move", {
-                "name": fx(f"{MARK} TC253 virtual-to-virtual"),
+                name_field: fx(f"{MARK} TC253 virtual-to-virtual"),
                 "product_id": component,
                 "product_uom_qty": 1.0,
                 uom_field: uom,
