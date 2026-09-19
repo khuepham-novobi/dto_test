@@ -192,6 +192,22 @@ def create_invoice(ctx, order_id: int) -> int | None:
             raise
         ctx.log(f"[warn] create_invoices refused for sale.order {order_id}: "
                 f"{exc}")
+        # "Nothing to invoice" has TWO causes, and they are opposites.
+        # Either nothing has been delivered yet, or everything has already
+        # been invoiced — which on this database is the NORMAL outcome:
+        # dto_sale_stock auto-creates and posts the invoice when the
+        # delivery is validated, for the project, inventory and
+        # cost_center order types (that override is WF-012's subject).
+        # Measured: invoice_status='invoiced', qty_delivered=1.0,
+        # qty_to_invoice=0.0, qty_invoiced=1.0 — and an invoice on the
+        # order. Returning None there made thirteen WF-013 cases BLOCK for
+        # a missing invoice that was sitting on the order all along.
+        existing = order_invoices(rpc, order_id, ["id", "state"])
+        if existing:
+            ctx.log(f"the order is already invoiced by "
+                    f"{existing[-1]!r} — returning it rather than "
+                    "reporting no invoice")
+            return existing[-1]["id"]
         return None
     invoices = order_invoices(rpc, order_id, ["id", "state"])
     return invoices[-1]["id"] if invoices else None
@@ -252,3 +268,23 @@ def gate_analytic(ctx, order_type: str, label: str = "QA Gate"):
     account_id = ensure_analytic_account(
         rpc, plan_id, f"{label} {order_type.title()}")
     return {str(account_id): 100}
+
+
+def post_if_draft(ctx, move_id: int) -> str:
+    """Post a move only when it is still draft; return the state observed.
+
+    On this database a fixture invoice frequently arrives ALREADY POSTED:
+    dto_sale_stock posts it as part of validating the delivery, for the
+    project, inventory and cost_center order types. Calling action_post on
+    a posted move does not no-op — measured, it raises "The entry is not
+    balanced" — so every caller that means "make sure this is posted" has
+    to look first.
+    """
+    rpc = ctx.adapter.rpc
+    state = rpc.read("account.move", [move_id], ["state"])[0]["state"]
+    if state == "draft":
+        rpc.call("account.move", "action_post", [move_id])
+        state = rpc.read("account.move", [move_id], ["state"])[0]["state"]
+    else:
+        ctx.log(f"move {move_id} was already {state!r}; not posting again")
+    return state

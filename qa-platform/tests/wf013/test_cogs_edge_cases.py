@@ -30,6 +30,7 @@ inverted-order symptom. Those are implemented instead.
 EXPECTED v17 OUTCOME: PASS for all five, with TC230 asserting the defect's
 current (contaminating) behaviour as the workbook documents it.
 """
+from framework.dto_fixtures import post_if_draft
 from framework.registry import test_case
 from tests.wf013.common import (ACCRUED_REVENUE_CODE,  # noqa: F401
                                 COGS_ANALYTIC_XMLIDS, MARK, WORKFLOW,
@@ -134,7 +135,7 @@ def test_tc228(ctx):
                 actual_desc=str(codes))
 
         with ctx.step("Step 6: it posts successfully and is numbered"):
-            rpc.call("account.move", "action_post", [invoice_id])
+            post_if_draft(ctx, invoice_id)
             move = rpc.read("account.move", [invoice_id],
                             ["state", "name"])[0]
             ctx.log(f"posted: {move!r}")
@@ -421,7 +422,7 @@ def test_tc231(ctx):
             with ctx.step(f"Cycle {cycle}: post again — the shape returns "
                           "to exactly the baseline, with nothing "
                           "accumulated"):
-                rpc.call("account.move", "action_post", [invoice_id])
+                post_if_draft(ctx, invoice_id)
                 current = shape()
                 ctx.log(f"posted shape in cycle {cycle}: {current!r}")
                 ctx.check(f"cycle {cycle}: shape matches the baseline",

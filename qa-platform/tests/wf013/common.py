@@ -400,22 +400,71 @@ def sell_and_invoice(ctx, order_type="project", analytic=None, qty=1.0,
                     "delivered, invoiced order.")
 
     pickings = deliver_order(ctx, order_id)
-    if pickings and any(p["state"] != "done" for p in pickings):
+    ctx.log(f"outgoing pickings after delivery: {pickings!r}")
+    # An EMPTY list used to pass this guard silently — `if pickings and
+    # any(...)` is True only when there IS one. An order that generated no
+    # outgoing picking at all therefore sailed through and failed later at
+    # the invoice step with "No items are available to invoice", which
+    # points at the invoicing policy and not at the missing delivery.
+    if not pickings:
+        ctx.blocked(
+            f"The {order_type} fixture order generated NO outgoing "
+            "picking, so nothing can be delivered and the anglo-saxon COGS "
+            "lines this case reads are never produced. Check the "
+            "product's route and the warehouse on this database.")
+    if any(p["state"] != "done" for p in pickings):
         ctx.blocked(
             "The outgoing picking did not reach 'done' "
             f"({pickings!r}). Anglo-saxon COGS lines are only produced for "
             "delivered quantities, so the assertions would be vacuous.")
 
+    # Read the line state BEFORE invoicing: when create_invoice comes back
+    # empty these three numbers say which of the two possible causes it is
+    # — nothing delivered, or nothing left to invoice.
+    lines = rpc.search_read("sale.order.line", [("order_id", "=", order_id)],
+                            ["product_uom_qty", "qty_delivered",
+                             "qty_to_invoice", "qty_invoiced"])
+    status = rpc.read("sale.order", [order_id], ["invoice_status"])[0]
+    ctx.log(f"order invoice_status={status['invoice_status']!r}; "
+            f"lines={lines!r}")
+
     invoice_id = create_invoice(ctx, order_id)
     if not invoice_id:
         ctx.blocked(
             f"No customer invoice was produced for the {order_type} "
-            "fixture order. Check the product's invoicing policy and the "
-            "delivered quantity on this database.")
-    rpc.write("account.move", [invoice_id],
-              {"invoice_date": "2026-01-15"})
-    if post:
-        rpc.call("account.move", "action_post", [invoice_id])
+            f"fixture order. invoice_status="
+            f"{status['invoice_status']!r}, lines={lines!r}. "
+            "Check the product's invoicing policy and the delivered "
+            "quantity on this database.")
+    # The invoice may arrive ALREADY POSTED: dto_sale_stock posts it as
+    # part of validating the delivery. A posted move refuses both the date
+    # write and a second action_post, so each is conditional on the state
+    # actually observed rather than assumed.
+    invoice_state = rpc.read("account.move", [invoice_id],
+                             ["state"])[0]["state"]
+    ctx.log(f"invoice {invoice_id} is {invoice_state!r} before the fixture "
+            "finishes it")
+    if invoice_state == "draft":
+        rpc.write("account.move", [invoice_id],
+                  {"invoice_date": "2026-01-15"})
+        if post:
+            rpc.call("account.move", "action_post", [invoice_id])
+    elif not post:
+        # post=False asks for a DRAFT invoice to inspect. It cannot always
+        # be honoured: for the project, inventory and cost_center order
+        # types dto_sale_stock posts the invoice as part of validating the
+        # delivery, so one arrives already posted no matter what the caller
+        # asked for. Said plainly here so a case that reads "the draft
+        # receivable ..." is not quietly reading a posted move.
+        ctx.log(f"[note] post=False was requested but invoice {invoice_id} "
+                f"is already {invoice_state!r} — dto_sale_stock posts it "
+                "when the delivery is validated, so no draft invoice is "
+                "obtainable through this path on this order type")
+    elif post and invoice_state != "posted":
+        ctx.blocked(
+            f"The fixture invoice {invoice_id} is {invoice_state!r}, "
+            "neither draft nor posted, so the COGS assertions have no "
+            "posted journal entry to read.")
     return order_id, invoice_id
 
 

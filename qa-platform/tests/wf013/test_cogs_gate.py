@@ -29,6 +29,7 @@ the FIFO cost) and sentinel 2 (the Interim distribution empties) until
 ``dto_account_cogs`` is ported to the new hook names. That failure IS the
 finding.
 """
+from framework.dto_fixtures import post_if_draft
 from framework.registry import test_case
 from tests.wf013.common import (ANGLO_SAXON_HOOKS, MARK,  # noqa: F401
                                 WORKFLOW, WORKFLOW_NAME,
@@ -119,7 +120,7 @@ def test_tc221(ctx):
                       len(draft_ar))
 
         with ctx.step("Step 4: post the invoice"):
-            rpc.call("account.move", "action_post", [invoice_id])
+            post_if_draft(ctx, invoice_id)
             move = rpc.read("account.move", [invoice_id],
                             ["state", "name"])[0]
             ctx.log(f"posted move: {move!r}")

@@ -30,6 +30,7 @@ methods Odoo 19 renamed or removed (see ``test_cogs_gate.py``), so the COGS
 basis silently reverts to the FIFO cost for every order type. TC222 is the
 case that names that finding.
 """
+from framework.dto_fixtures import post_if_draft
 from framework.registry import test_case
 from tests.wf013.common import (ACCRUED_REVENUE_CODE, MARK,  # noqa: F401
                                 WORKFLOW, WORKFLOW_NAME,
@@ -395,7 +396,7 @@ def test_tc227(ctx):
         with ctx.step("Step 5: post the consolidated invoice"):
             rpc.write("account.move", [invoice_id],
                       {"invoice_date": "2026-01-15"})
-            rpc.call("account.move", "action_post", [invoice_id])
+            post_if_draft(ctx, invoice_id)
             ctx.check("move state", "posted",
                       rpc.read("account.move", [invoice_id],
                                ["state"])[0]["state"])

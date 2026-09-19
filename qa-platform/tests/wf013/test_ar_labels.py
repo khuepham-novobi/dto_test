@@ -28,6 +28,7 @@ fires on the reversal lines ``dto_account_cogs`` itself creates (TC287).
 
 EXPECTED v17 OUTCOME: PASS for all seven.
 """
+from framework.dto_fixtures import post_if_draft
 from framework.registry import test_case
 from tests.wf013.common import (MARK, WORKFLOW, WORKFLOW_NAME,  # noqa: F401
                                 ensure_analytic_account, ensure_partner,
@@ -214,7 +215,7 @@ def test_tc281(ctx):
         for cycle in (1, 2, 3):
             with ctx.step(f"Cycle {cycle}: draft then post again"):
                 rpc.call("account.move", "button_draft", [invoice_id])
-                rpc.call("account.move", "action_post", [invoice_id])
+                post_if_draft(ctx, invoice_id)
                 current = sorted(ln["name"] or ""
                                  for ln in _receivable(rpc, invoice_id))
                 ctx.log(f"labels after cycle {cycle}: {current!r}")
