@@ -1,6 +1,9 @@
 # Product defects found by the QA suite — for the development team
 
-Source: full regression run **RUN-1DE0AD94** on `d1v19`, 337 tests, 2026-09-19.
+Source: full regression run **RUN-EC753BBD** on `d1v19`, 337 tests, 2026-09-19
+(173 PASSED / 91 FAILED / 60 BLOCKED / 10 ERROR / 3 SKIPPED). Supersedes
+RUN-1DE0AD94, against which two entries below turned out to be wrong; both
+are marked WITHDRAWN rather than deleted.
 Database: restored from `d1systems-uat-38267540_2026-09-18_130212_exact_fs.zip`.
 Custom source: `dto_custom` @ `3467e3d` (branch UAT).
 
@@ -115,26 +118,22 @@ not to survive.
 
 ---
 
-### 1.4 `get_default_narration` receives an int where a recordset is expected
+### 1.4 WITHDRAWN — `get_default_narration` was our own bad call
 
-**`project-addons/dto_account/models/account_move.py:44`**
+**This entry was wrong and is retracted.** It is left in place rather than
+deleted so nobody spends time looking for the caller it described.
 
-```python
-def get_default_narration(self, partner, company=None):
-    ...
-    lang = partner.lang or self.env.user.lang
-```
+`get_default_narration(self, partner, company=None)` takes **recordsets**.
+The `'int' object has no attribute 'lang'` came from the QA suite calling
+it over JSON-RPC, where a partner can only be sent as an id. The earlier
+text reasoned that "the int arrives from a third caller — worth finding";
+there is no third caller. Both real call sites pass recordsets, and they
+are correct.
 
-```
-account.move.get_default_narration failed:
-'int' object has no attribute 'lang'
-```
+The case now reads `narration` back off a record, which exercises the same
+code path through `_compute_narration`. `TEST-WF016-TC277` PASSES.
 
-Both call sites in the same file pass a recordset (`:26`, `:39`), so the
-int arrives from a third caller — worth finding, because the method is
-public and therefore reachable from anywhere.
-
-**Blocks** 1 case in WF-016.
+Nothing to fix.
 
 ---
 
@@ -195,7 +194,14 @@ The field is `store=True`, so whatever order happened at compute time is
 
 **Fix** is one word: `sorted()`, or `dict.fromkeys()` to keep line order.
 
-**Recorded by** `TEST-WF026-TC399`, `TC401`.
+**Recorded by** `TEST-WF026-TC401`, which fails with
+`expected 'RCPT-A, RCPT-B, RCPT-C', got 'RCPT-C, RCPT-A, RCPT-B'`.
+
+**`TEST-WF026-TC399` currently PASSES, and that is not evidence of a fix.**
+Python randomises string hashing per PROCESS, so a small set can come out
+in insertion order by luck and stay that way until the server restarts.
+A green TC399 beside a red TC401 in the same run is the non-determinism
+itself. The source still reads `set(...)` with no `sorted()`.
 
 ---
 
@@ -268,10 +274,19 @@ original and says nothing.
 `quality.check.action_open_quality_check_wizard` is called with a
 multi-record set. Blocks 1 case in WF-015.
 
-### 3.3 `KeyError: 'traceback'`
+### 3.3 WITHDRAWN — `KeyError: 'traceback'` was a session artefact
 
-A wizard result is read for a `traceback` key that v19 does not provide.
-Blocks `TEST-WF020-TC301`. Known since the earlier triage.
+**This entry was wrong and is retracted.**
+
+`fields_get` OMITS any field the calling session may not read (v19
+`odoo/orm/models.py:3358-3359`). `sftp.log.traceback` declares
+`groups='base.group_no_one'`, which is effective only in a DEBUG session,
+so outside one the key is simply absent from the response and the test's
+bare `tb["traceback"]` raised. That absence is the developer-only
+restriction working — a stronger proof of it than reading the attribute
+would have been.
+
+`TEST-WF020-TC301` PASSES. Nothing to fix.
 
 ---
 
