@@ -53,7 +53,9 @@ from tests.wf019.common import (ACTIVITY_TYPE_XMLID,  # noqa: F401
                                 payment_journal, payments_for,
                                 require_payment_import, restore_company,
                                 retarget_payment_journal, row, run_import,
-                                sweep_wf019, trace, workday_id)
+                                sweep_wf019, trace, workday_id,
+                                method_line_name,
+                                settled_payment_state)
 
 
 @test_case(
@@ -165,7 +167,8 @@ def test_tc323(ctx):
                            bool(payments), actual_desc=repr(payments))
             first = payments[0]
             ctx.check("amount", 100.0, first["amount"])
-            ctx.check("state", "posted", first["state"])
+            ctx.check("state", settled_payment_state(ctx),
+                      first["state"])
             ctx.check("payment_type", "outbound", first["payment_type"])
             ctx.check("partner_type", "supplier", first["partner_type"])
             ctx.check("journal", journal_id, m2o_id(first["journal_id"]))
@@ -173,8 +176,7 @@ def test_tc323(ctx):
             ctx.check("date comes from Payment_Date, not today",
                       "2026-09-01", str(first["date"]))
             ctx.check("payment_method_line resolved from Payment_Type",
-                      method, (first.get("payment_method_line_id") or
-                               [None, None])[1])
+                      method, method_line_name(rpc, first))
             ctx.check("export_workday stamped on the payment", True,
                       first["export_workday"])
             a_after = bill_state(rpc, pb_a)
@@ -192,7 +194,8 @@ def test_tc323(ctx):
             ctx.log(f"payments carrying {sp2!r}: {payments2!r}")
             ctx.check("exactly one payment for row 2", 1, len(payments2))
             ctx.check("amount", 250.0, payments2[0]["amount"])
-            ctx.check("state", "posted", payments2[0]["state"])
+            ctx.check("state", settled_payment_state(ctx),
+                      payments2[0]["state"])
             b_after = bill_state(rpc, pb_b)
             ctx.log(f"PB-B after row 2: {b_after!r}")
             ctx.check("PB-B residual", 0.0, b_after["amount_residual"])
@@ -261,7 +264,8 @@ def test_tc323(ctx):
                 "TWO distinct account.payment records share one "
                 "Supplier_Payment — the defect this case exists to record",
                 2, len(payments))
-            ctx.check("both are posted", ["posted", "posted"],
+            settled = settled_payment_state(ctx)
+            ctx.check("both are posted", [settled, settled],
                       [p["state"] for p in payments])
             ctx.check("both are 100.00", [100.0, 100.0],
                       [p["amount"] for p in payments])
@@ -303,7 +307,8 @@ def test_tc323(ctx):
             ctx.check("the partial-batch rule: three posted payments "
                       "survive a Failed file",
                       3, len([p for p in survivors
-                              if p["state"] == "posted"]))
+                              if p["state"]
+                              == settled_payment_state(ctx)]))
 
         with ctx.step("Step 24: the remote archive move is NOT observable "
                       "here — recorded, not asserted"):
@@ -411,7 +416,7 @@ def test_tc324(ctx):
                 ["company_id"])[0]["company_id"])
             mismatches = {}
             expected = {
-                "state": "posted",
+                "state": settled_payment_state(ctx),
                 "journal_id": journal_id,
                 "payment_type": "outbound",
                 "partner_type": "supplier",
@@ -435,8 +440,7 @@ def test_tc324(ctx):
                       {}, mismatches)
             ctx.check("payment_method_line_id is the line named exactly "
                       "Payment_Type.strip()", method,
-                      (payment.get("payment_method_line_id")
-                       or [None, None])[1])
+                      method_line_name(rpc, payment))
             ctx.check("the payment's company is the BILL's company",
                       bill_company, m2o_id(payment.get("company_id")))
             ctx.log(f"journal {journal_id} belongs to company "

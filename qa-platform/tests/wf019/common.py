@@ -85,6 +85,7 @@ from __future__ import annotations
 import base64
 import csv
 import io
+import re
 import uuid
 
 from adapters.base import OdooRPCError
@@ -691,3 +692,77 @@ def file_message(rpc, file_id) -> str:
     file-level activity — the only place it is persisted."""
     acts = activities_on(rpc, "sftp.file", [file_id])
     return " || ".join(str(act.get("note") or "") for act in acts)
+
+
+# ------------------------------------------------- account.payment.state
+#: v17 vs v19 — the same business fact under two different field designs.
+#:
+#: v17: ``account.payment.state`` is RELATED to ``move_id.state``
+#:      (measured on dto_17: ir_model_fields.related = 'move_id.state',
+#:      store = f), so it reads 'draft' / 'posted' / 'cancel'.
+#:
+#: v19: ``account.payment.state`` is its OWN selection. Measured on d1v19:
+#:      draft / in_process / paid / canceled / rejected. There is NO
+#:      'posted' value at all. A payment whose journal entry is posted but
+#:      which has not been matched yet reads 'in_process'; once it is
+#:      matched against the bill it reads 'paid'.
+#:
+#: Every WF-019 case settles a bill in the same step it posts the payment,
+#: so 'paid' is the state to expect on v19. That is STRICTER than v17's
+#: 'posted', not weaker: it asserts the posting AND the matching, where
+#: 'posted' only ever asserted the posting.
+#:
+#: The journal entry's own state is unaffected — account.move.state is
+#: 'posted' on both versions, and the places that read it are left alone.
+def settled_payment_state(ctx) -> str:
+    """The state a posted, reconciled outbound payment shows on this target."""
+    rpc = ctx.adapter.rpc
+    field = rpc.call("account.payment", "fields_get", ["state"],
+                     attributes=["selection"]).get("state") or {}
+    values = {value for value, _label in (field.get("selection") or [])}
+    if "paid" in values:
+        return "paid"
+    if "posted" in values:
+        return "posted"
+    ctx.blocked(
+        f"account.payment.state on {ctx.env.key} offers neither 'paid' nor "
+        f"'posted' — it offers {sorted(values)}. WF-019 asserts the state a "
+        "settled supplier payment reaches, and that cannot be named here.")
+
+
+def method_line_name(rpc, payment_row) -> str | None:
+    """The NAME of a payment's method line, never its display name.
+
+    ``_get_workday_payment_method_line_id`` matches ``Payment_Type.strip()``
+    against ``outbound_payment_method_line_ids.name``
+    (dto_account_workday/models/account_payment.py:62-67), and
+    ``payment_journal()`` above hands the fixture those same ``name``
+    values. Reading the Many2one's label instead compares a name against a
+    DISPLAY name: measured on d1v19 the line named 'ACH' labels itself
+    'ACH (Bank)', so the assertion failed on the journal suffix while the
+    product had resolved exactly the right line.
+    """
+    value = payment_row.get("payment_method_line_id")
+    if not value:
+        return None
+    line_id = value[0] if isinstance(value, (list, tuple)) else value
+    return rpc.read("account.payment.method.line", [line_id],
+                    ["name"])[0]["name"]
+
+
+# The loader joins its per-row messages with '<br/>'
+# (dto_account_workday/utils/workday_vendor_payment_sftp_sdk/etl_processor/
+# workday_vendor_payment_loader.py:21) — IDENTICAL on v17 (:21 of the same
+# path). What comes back differs: the value is stored in an Html field, and
+# the sanitiser re-serialises the self-closing tag, so reading it back gives
+# '<br>'. Measured on d1v19.
+#
+# The separator's SERIALISED form is not what any of these cases is about;
+# the count of line breaks and the presence of each message are. Matching
+# both spellings keeps the assertion exactly as strong on either version.
+_BR_RE = re.compile(r"<br\s*/?>", re.IGNORECASE)
+
+
+def count_breaks(text) -> int:
+    """How many line breaks join the messages, whichever way they serialise."""
+    return len(_BR_RE.findall(str(text or "")))

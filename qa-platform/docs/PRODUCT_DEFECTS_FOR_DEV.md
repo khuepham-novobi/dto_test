@@ -262,6 +262,63 @@ original and says nothing.
 
 ---
 
+### 2.6 Every ETL failure message is destroyed before the operator sees it
+
+**Six call sites, four modules** — e.g.
+`project-addons/dto_account_workday/utils/workday_vendor_payment_sftp_sdk/etl_processor/workday_vendor_payment_extractor.py:27`
+
+```python
+except Exception as e:
+    self.etl_processor.set_result(False)
+    self.etl_processor.set_message(e)        # <- the EXCEPTION, not str(e)
+```
+
+The message ends up as an activity note on the `sftp.file`, which is an
+Html field. `html_sanitize` runs `re.sub()` over it, that raises on a
+non-string, and `odoo/tools/mail.py:462-466` catches **any** exception
+while sanitising and replaces the whole body:
+
+```
+<p>Unknown error when sanitizing</p>
+```
+
+The real cause survives only in the server log:
+
+```
+WARNING odoo.tools.mail.html_sanitize: unknown error obtained when
+sanitizing IndexError('list index out of range')
+```
+
+**Impact** — an operator opens a Failed file and is told nothing at all.
+Measured with a CSV whose row 1 has 7 cells instead of 8: the file fails,
+no payment is created from ANY row, and the only diagnostic is the string
+above. The base class gets this right
+(`sftp_extractor.py:29`, `error_message = f'Error on EXTRACT: {e}'`); it is
+the per-business overrides that pass the object.
+
+**The six sites**
+
+| module | file:line |
+|---|---|
+| `dto_account_workday` | `workday_vendor_payment_extractor.py:27` |
+| `dto_account_workday` | `workday_vendor_payment_transformer.py:24` |
+| `dto_purchase_workday` | `workday_supplier_transformer.py:20` |
+| `dto_sale_workday` | `workday_requisition_extractor.py:31` |
+| `dto_sale_workday` | `workday_requisition_loader.py:21` |
+| `dto_sale_workday` | `workday_requisition_transformer.py:24` |
+
+So it costs the diagnostic on the Workday requisition and supplier imports
+too, not only vendor payments.
+
+**Not a v19 regression** — v17 carries seven of the same call sites.
+
+**Fix** — `set_message(str(e))` at each site.
+
+**Recorded by** `TEST-WF019-TC328`, which logs it as a finding and asserts
+the behaviour around it (the file fails, no row is paid).
+
+---
+
 ## Severity 3 — v19 API changes still to be worked through
 
 ### 3.1 `You cannot set more than 1 lot`

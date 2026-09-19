@@ -45,6 +45,8 @@ idempotency key are v17 defects, not v19 changes; the v19 relevance is
 ``amount_residual`` (delta §2.2), because the residual guard is the only
 partial defence and a change in how the residual is computed moves it.
 """
+import time
+
 from framework.registry import test_case
 from tests.wf019.common import (DUPLICATE_POLICIES,  # noqa: F401
                                 ERR_ALREADY_PROCESSED, ERR_ONLY_PENDING,
@@ -57,7 +59,8 @@ from tests.wf019.common import (DUPLICATE_POLICIES,  # noqa: F401
                                 payment_journal, payments_for, process_file,
                                 require_payment_import, restore_company,
                                 retarget_payment_journal, row, run_import,
-                                sweep_wf019, trace, workday_id)
+                                sweep_wf019, trace, workday_id,
+                                settled_payment_state)
 
 
 @test_case(
@@ -132,7 +135,9 @@ def test_tc329(ctx):
             ctx.check("the file is Done", "done", first_row["state"])
             payments = payments_for(rpc, sp)
             ctx.check("one payment", 1, len(payments))
-            ctx.check("posted", "posted", payments[0]["state"])
+            settled = settled_payment_state(ctx)
+            ctx.check("posted and matched", settled,
+                      payments[0]["state"])
             ctx.check("PB-A residual", 400.0,
                       bill_state(rpc, pb_a)["amount_residual"])
             ctx.log("The remote archive move is not observable here — "
@@ -181,7 +186,8 @@ def test_tc329(ctx):
             ctx.log(f"payments carrying {sp!r}: {payments!r}")
             ctx.check("TWO payments now share one Supplier_Payment",
                       2, len(payments))
-            ctx.check("both posted", ["posted", "posted"],
+            settled = settled_payment_state(ctx)
+            ctx.check("both posted and matched", [settled, settled],
                       [p["state"] for p in payments])
             ctx.check("PB-A residual is 500 - 100 - 100 — the supplier has "
                       "been paid 200.00 for one 100.00 Workday payment",
@@ -455,6 +461,16 @@ def test_tc299(ctx):
 
         with ctx.step("Steps 6-7: F1 ALONE re-runs the full pipeline and "
                       "ends with a fresh process_date"):
+            # sftp.file.process_date is a Datetime — ONE-SECOND precision
+            # — and action_process_sftp_files stamps it from
+            # fields.Datetime.now() (sftp_file.py:212-218). Every RPC in
+            # this case takes tens of milliseconds, so the original
+            # processing and this retry land in the SAME second and the
+            # stamp is byte-identical although the file really did re-run.
+            # Waiting past the second boundary is what makes the assertion
+            # below mean what it says; without it the case fails on clock
+            # granularity rather than on behaviour.
+            time.sleep(1.1)
             rpc.call("sftp.file", "action_retry_process_sftp_files", [f1])
             f1_after = rpc.read("sftp.file", [f1],
                                 ["state", "process_date"])[0]
