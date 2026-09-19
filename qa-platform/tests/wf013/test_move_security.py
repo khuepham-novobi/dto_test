@@ -112,8 +112,28 @@ def _draft_move(rpc, label):
     })
 
 
-def _delete_case(ctx, suffix, group_xmlids, expect_allowed, label):
-    """Shared body: can a user in these groups delete a draft entry?"""
+#: A group that grants READ on account.move and NOT unlink. Measured on
+#: d1v19: account.group_account_invoice is perm_read=t, perm_unlink=f.
+#:
+#: It is needed because dto_account.admin_access_account_move grants
+#: base.group_system perm_unlink with perm_read, perm_write and perm_create
+#: all FALSE. A user holding only base.group_system therefore cannot read
+#: account.move at all, and the ORM refuses the delete before the unlink
+#: right is ever consulted — "You are not allowed to access 'Journal Entry'".
+#: Adding a read-only accounting group makes the deletion right the ONLY
+#: thing the case varies, which is what it says it tests. It cannot mask a
+#: missing unlink right, because this group does not carry one.
+MOVE_READ_GROUP = "account.group_account_invoice"
+
+
+def _delete_case(ctx, suffix, group_xmlids, expect_allowed, label,
+                 read_groups=(MOVE_READ_GROUP,)):
+    """Shared body: can a user in these groups delete a draft entry?
+
+    ``group_xmlids`` are the groups UNDER TEST — the ones the access-row
+    assertion below reads. ``read_groups`` only make the record visible and
+    are deliberately excluded from that assertion.
+    """
     rpc = ctx.adapter.rpc
 
     with ctx.step("Sweep previous WF-013 fixtures and open a fresh "
@@ -130,7 +150,14 @@ def _delete_case(ctx, suffix, group_xmlids, expect_allowed, label):
 
     with ctx.step("Build a disposable user in those groups and a draft "
                   "journal entry to aim at"):
-        user_id, login = _make_user(ctx, suffix, group_xmlids)
+        visible = [x for x in read_groups if rpc.ref(x)]
+        if read_groups and not visible:
+            ctx.log(f"[warn] none of {list(read_groups)} resolve; the user "
+                    "may not be able to see the entry at all")
+        user_id, login = _make_user(ctx, suffix,
+                                    list(group_xmlids) + visible)
+        ctx.log(f"groups under test: {list(group_xmlids)}; "
+                f"read-only groups added so the entry is visible: {visible}")
         move_id = _draft_move(rpc, label)
         if not move_id:
             ctx.blocked("No general journal exists on this database, so no "

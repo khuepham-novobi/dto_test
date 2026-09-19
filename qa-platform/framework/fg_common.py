@@ -14,7 +14,8 @@ import http.cookiejar
 import json
 import urllib.request
 
-from framework.baselines import (baseline_path, diff_counts, load_baseline,
+from framework.baselines import (baseline_path, dataset_fingerprint,
+                                 dataset_mismatch, diff_counts, load_baseline,
                                  save_baseline)
 
 WORKBOOK = "DataOne_v19_Test_Suite_and_Workflows_v1.0.xlsx"
@@ -107,11 +108,15 @@ def reconcile(ctx, tc_id, capture, anchors=None):
                 ctx.check(f"anchor {key}", expected=expected,
                           actual=current.get(key))
 
+    fingerprint = dataset_fingerprint(ctx.adapter.rpc)
+
     if ctx.env.version == "17":
         with ctx.step("Persist v17 baseline for the v19 comparison"):
-            path = save_baseline(tc_id, ctx.env.key, ctx.env.db, current)
+            path = save_baseline(tc_id, ctx.env.key, ctx.env.db, current,
+                                 dataset=fingerprint)
             ctx.add_artifact(path, "log", f"{tc_id} v17 baseline")
             ctx.log(f"baseline stored: {path}")
+            ctx.log(f"dataset fingerprint: {fingerprint!r}")
     else:
         with ctx.step("Diff against the stored v17 baseline"):
             base = load_baseline(tc_id)
@@ -120,6 +125,24 @@ def reconcile(ctx, tc_id, capture, anchors=None):
                             "run the suite on Odoo 17 first")
             ctx.add_artifact(baseline_path(tc_id), "log",
                              f"{tc_id} v17 baseline")
+            # A baseline is only evidence about the migration when it came
+            # from the database this target was migrated FROM. Diffing a
+            # different dataset produces a long, confident list of
+            # differences that says nothing — see dataset_fingerprint().
+            mismatch = dataset_mismatch(base, fingerprint)
+            if mismatch:
+                ctx.log(f"baseline dataset: {base.get('dataset')!r}")
+                ctx.log(f"target dataset:   {fingerprint!r}")
+                ctx.blocked(
+                    f"The stored baseline for {tc_id} (captured "
+                    f"{base.get('captured_at')} on db "
+                    f"{base.get('captured_db')!r}) is not comparable with "
+                    f"{ctx.env.key} (db={ctx.env.db}): {mismatch}. "
+                    "Re-capture it by running this case on the Odoo 17 "
+                    "database holding the SAME data this target was "
+                    "migrated from; until then a diff would report "
+                    "differences between two unrelated datasets, not "
+                    "between two versions of one.")
             diffs = diff_counts(base["data"], current)
             ctx.check("No differences vs v17 baseline", expected=[],
                       actual=diffs)

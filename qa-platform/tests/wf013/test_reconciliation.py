@@ -98,10 +98,17 @@ def test_tc007(ctx):
                 "TC007 extracts env.ref() literals from source and cannot "
                 "be answered from the database alone.")
 
+    with ctx.step("Determine which modules are actually DEPLOYED — an "
+                  "env.ref() in an uninstalled module can never run"):
+        installed = {row["name"] for row in rpc.search_read(
+            "ir.module.module", [("state", "=", "installed")], ["name"])}
+        ctx.log(f"{len(installed)} installed module(s) on {ctx.env.key}")
+
     with ctx.step("Extract every env.ref('module.name') literal"):
         pattern = r"""\.ref\(\s*['"]([a-zA-Z0-9_]+\.[a-zA-Z0-9_]+)['"]"""
         literal_re = re.compile(pattern)
         found: dict = {}
+        skipped = []
         for addon_root in ADDON_ROOTS:
             base = root / addon_root
             if not base.is_dir():
@@ -109,12 +116,28 @@ def test_tc007(ctx):
             for module_dir in sorted(base.iterdir()):
                 if not (module_dir / "__manifest__.py").is_file():
                     continue
+                # The addons PATH is not the deployed set. Scanning a
+                # module that is not installed reports its xmlids as
+                # unresolvable, which is correct and meaningless: the code
+                # never executes and the data was never loaded. Measured on
+                # d1v19 — base_tier_validation, location_barcode_labels and
+                # printnode_base are all 'uninstalled', and between them
+                # they accounted for every unresolved literal, including
+                # the one naming the INSTALLED uom module
+                # (uom.product_uom_categ_unit, referenced only from
+                # printnode_base/wizard/product_label_layout.py:43).
+                if module_dir.name not in installed:
+                    skipped.append(module_dir.name)
+                    continue
                 for hit in grep_module(module_dir, pattern,
                                        suffixes=(".py",)):
                     for xmlid in literal_re.findall(hit["text"]):
                         found.setdefault(xmlid, []).append(
                             f"{module_dir.name}/{hit['file']}:{hit['line']}")
-        ctx.log(f"{len(found)} distinct env.ref() literal(s)")
+        ctx.log(f"{len(found)} distinct env.ref() literal(s) across the "
+                f"deployed modules")
+        ctx.log(f"{len(skipped)} module(s) on the addons path but NOT "
+                f"installed, so not scanned: {sorted(skipped)}")
 
     with ctx.step("Resolve every one against ir.model.data and record the "
                   "evidence before asserting"):

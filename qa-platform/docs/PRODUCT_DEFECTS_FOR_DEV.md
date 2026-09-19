@@ -319,6 +319,83 @@ the behaviour around it (the file fails, no row is paid).
 
 ---
 
+### 2.7 Nine HR users can delete journal entries
+
+**A manually-created ACL row, owned by no module** — `ir.model.access` id
+**1041**, named `system admins`.
+
+```
+model        account.move
+group        hr.group_hr_manager
+perm_read    t   perm_write  t   perm_create  t   perm_unlink  t
+xmlid        (none)
+create_date  2024-11-11 14:12:16
+```
+
+The intended design is one grant only —
+`dto_account.admin_access_account_move`, which gives `base.group_system`
+`perm_unlink` and nothing else. Row 1041 is a second one, added through the
+UI, and it grants **full CRUD including deletion** on every journal entry.
+
+**Who holds it today** — `hr.group_hr_manager` has eleven members on
+d1v19, nine of them named people:
+
+```
+amber.reed@d1systems.com     Amber Reed
+jsolls                       Jack Solls
+klotspeich                   Kali Lotspeich
+colton.thomsen@d1systems.com Colton Thomsen
+reggie.broussard@d1systems.com Reggie Broussard
+clancy.fallwell@d1systems.com  Clancy Fallwell
+josh.draeger@d1systems.com     Josh Draeger
+jeff.ray@d1systems.com         Jeff Ray
+production_supervisor        Production supervisor
+```
+
+plus `admin` and `__system__`.
+
+**Why it matters for the upgrade specifically** — the row carries **no
+xmlid**, so no module owns it, no module update touches it and nothing in
+the migration will remove or even mention it. It crosses to v19 silently
+and keeps working.
+
+**Recorded by** `TEST-WF013-TC273`, which asserts that exactly one group
+holds `perm_unlink` on `account.move` and names what it finds.
+
+**Question for the team, not an assumption** — if HR managers are meant to
+administer this system, the row should be a declared ACL in a module with
+an xmlid, so it is reviewable and survives on purpose. If they are not, it
+should go.
+
+---
+
+### 2.8 The intended delete grant cannot be used on its own
+
+**`project-addons/dto_account/security/ir.model.access.csv`** —
+`dto_account.admin_access_account_move`
+
+```
+group base.group_system
+perm_read f   perm_write f   perm_create f   perm_unlink t
+```
+
+`perm_unlink` without `perm_read`. A user holding only `base.group_system`
+cannot read `account.move`, so the ORM refuses before the delete right is
+consulted:
+
+```
+You are not allowed to access 'Journal Entry' (account.move) records.
+```
+
+In practice a Settings user usually also holds an accounting group and the
+grant appears to work, which is why this has not been noticed. On its own
+it does nothing.
+
+**Found by** `TEST-WF013-TC272`, whose fixture now adds a read-only
+accounting group so that the deletion right is the only thing it varies.
+
+---
+
 ## Severity 3 — v19 API changes still to be worked through
 
 ### 3.1 `You cannot set more than 1 lot`
