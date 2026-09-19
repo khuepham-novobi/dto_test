@@ -2247,3 +2247,39 @@ def manifest_text(ctx, module: str) -> str | None:
     if not manifest.is_file():
         return None
     return manifest.read_text(encoding="utf-8", errors="replace")
+
+
+def require_barcode_renderer(ctx):
+    """BLOCK when the image cannot rasterise a barcode.
+
+    The Dymo label template draws its barcode through the ``barcode``
+    QWeb widget, which reaches
+    ``ir.actions.report.barcode()`` -> reportlab's ``renderPM``. renderPM
+    needs EITHER the pure-python ``rlPyCairo`` or the C extension
+    ``_rl_renderPM``. Measured: dto-odoo19 and dto-odoo17 carry NEITHER, so
+    the whole report route answers HTTP 500 and the test's real question —
+    how many labels are emitted — cannot be reached.
+
+    A stock Odoo image ships the renderer (Debian's python3-renderpm), so
+    this is a gap in these QA images and NOT a v19 regression. It is worth
+    knowing all the same: on any deployment missing it, every report
+    carrying a barcode fails the same way.
+    """
+    rpc = ctx.adapter.rpc
+    try:
+        rpc.call("ir.actions.report", "barcode", "Code128", "QA-PROBE",
+                 width=300, height=80)
+    except OdooRPCError as exc:
+        message = str(exc)
+        if "renderPM" in message or "rlPyCairo" in message or "_rl_" in message:
+            ctx.blocked(
+                "This image cannot rasterise a barcode: reportlab's "
+                "renderPM finds neither rlPyCairo nor _rl_renderPM "
+                f"({ctx.env.key}, db={ctx.env.db}). The Dymo label template "
+                "draws one through the QWeb `barcode` widget, so the report "
+                "route answers HTTP 500 before a single label is emitted "
+                "and the label COUNT this case exists to assert cannot be "
+                "observed. Install python3-renderpm (or pip rlPyCairo) in "
+                "the Odoo image. Measured on both dto-odoo17 and "
+                "dto-odoo19, so it is an image gap, not a v19 regression.")
+        ctx.log(f"[note] barcode probe raised something else: {exc}")

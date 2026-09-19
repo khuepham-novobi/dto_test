@@ -218,6 +218,7 @@ from tests.wf015.common import (DYMO_QTY_PREFIX, PRINT_REPORT_NAME_EXPR,
                                 pickings_of, pin_user_timezone,
                                 po_line_values, product_row, render_report,
                                 report_record, report_groups_field,
+                                require_barcode_renderer,
                                 require_label_wizard,
                                 require_reason_for_return,
                                 restore_user_timezone, run_label_wizard,
@@ -710,6 +711,7 @@ def _cleanup(rpc, uid, previous_tz):
 def test_tc212(ctx):
     rpc = ctx.adapter.rpc
     require_label_wizard(ctx)
+    require_barcode_renderer(ctx)
     open_namespace(ctx)
     uid = previous_tz = None
     try:
@@ -1040,6 +1042,7 @@ def test_tc212(ctx):
 def test_tc213(ctx):
     rpc = ctx.adapter.rpc
     require_label_wizard(ctx)
+    require_barcode_renderer(ctx)
     open_namespace(ctx)
     uid = previous_tz = None
     try:
@@ -1375,9 +1378,22 @@ def test_tc214(ctx):
             # by the public quality.check.action_open_quality_check_wizard
             # (O17 quality_control/models/quality.py:351-363) — the path the
             # receipt's Quality Check button takes.
+            # The ids go in as ONE positional argument. OdooRPC.call sends
+            # list(args) and call_kw takes args[0] as the ids, so
+            # call(model, method, [a, b]) is what reaches browse([a, b]).
+            #
+            # Written as [[a, b]] it became browse([[a, b]]) — a recordset
+            # whose _ids holds a LIST. quality.py:469 then read
+            # check_ids = sorted(self.ids) == [[a, b]] and :471 did
+            # browse(check_ids[0]) == browse([a, b]), two records, so
+            # _get_check_action_name()'s ensure_one() raised
+            # "Expected singleton: quality.check(a, b)". Core's method does
+            # support a multi-record set — it has no ensure_one() of its
+            # own and sets default_check_ids from all of them. The singleton
+            # was ours, the same bracket mistake as print_packing_slips.
             wizard_action = rpc.call("quality.check",
                                      "action_open_quality_check_wizard",
-                                     [[first_id, second_id]])
+                                     [first_id, second_id])
 
         with ctx.step("Assert the quality.check.wizard opens."):
             context = (wizard_action or {}).get("context") or {}

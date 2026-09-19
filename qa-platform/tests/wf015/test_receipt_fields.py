@@ -1037,6 +1037,55 @@ def test_tc220(ctx):
         with ctx.step("Assert the Journal Entries stat button is visible."):
             po_root = _parse_arch(form_arch(ctx, "purchase.order", "form"))
             journal_buttons = _button_nodes(po_root, JOURNAL_BUTTON)
+            # Decisive diagnostic for the union's valuation half: the
+            # compute reads picking_ids.move_ids.account_move_id
+            # (dto_purchase_stock/models/purchase_order.py:37), so if that
+            # link is empty the receipt contributed nothing no matter what
+            # entries exist in the journal.
+            _moves = rpc.search_read(
+                "stock.move", [("picking_id", "in", receipt_ids)],
+                ["product_id", "state", "quantity", "account_move_id"])
+            for _m in _moves:
+                ctx.log(f"  receipt move: {_m!r}")
+            _prod = rpc.read("product.product", [product_id],
+                             ["type", "is_storable", "categ_id"])[0]
+            _categ = rpc.read("product.category",
+                              [_prod["categ_id"][0]],
+                              ["property_valuation", "property_cost_method"])[0]
+            ctx.log(f"  product: {_prod!r}")
+            ctx.log(f"  category valuation: {_categ!r}")
+            # The union's valuation half depends on the receipt having
+            # produced an account.move. Measured on d1v19 it does not, and
+            # the reason is a v19 restructure the fixture cannot paper over:
+            #
+            #   * v17 categories carried property_stock_account_input_categ_id
+            #     / _output_categ_id. v19 REMOVED both — no field named
+            #     interim, input_categ or output_categ exists on any model.
+            #   * v19 adds product.category.account_stock_variation_id, which
+            #     is RELATED to
+            #     property_stock_valuation_account_id.account_stock_variation_id
+            #     — the counter-account now lives on account.account.
+            #   * On d1v19 that column is NULL for ALL 188 accounts.
+            #
+            # So real-time valuation has no counter-leg to post against: the
+            # move is valued (stock_move.value = 50.00, state='done') and no
+            # entry is written. Blocking here reports the configuration gap
+            # instead of reporting a count of 1 as a product failure.
+            if not any(_m.get("account_move_id") for _m in _moves):
+                ctx.blocked(
+                    "The fixture receipt produced NO valuation entry on "
+                    f"{ctx.env.key} (db={ctx.env.db}): its move is done and "
+                    f"valued (value="
+                    f"{_moves[0].get('quantity') if _moves else '?'} x unit) "
+                    "but account_move_id is empty. The category resolves a "
+                    "stock journal and a valuation account, yet v19 takes "
+                    "the counter-account from "
+                    "account.account.account_stock_variation_id, which is "
+                    "unset on every account on this database. Until that is "
+                    "configured the union can only ever hold the vendor "
+                    "bill, so the counter this case asserts cannot be "
+                    "observed. This is an accounting-configuration gap, not "
+                    "a defect in the Journal Entries button.")
             union = order_account_moves(rpc, order_id)
             ctx.check("the button exists with invisible=\"not "
                       "account_move_ids\" (views/purchase_order_views.xml:21), "
@@ -1060,6 +1109,13 @@ def test_tc220(ctx):
             # (views/purchase_order_views.xml:15); the Journal Entries button
             # carries only a static label in a div.o_stat_info (:22-24). The
             # union's length is therefore asserted directly.
+            # The union's CONTENT, not just its length: when the count is
+            # short this says which half is missing — the valuation entry
+            # from the receipt, or the vendor bill.
+            for row in union:
+                ctx.log(f"  union member: {row!r}")
+            ctx.log(f"union length {len(union)}, expected "
+                    f"{EXPECTED_UNION_SIZE}")
             journal_button = journal_buttons[0] if journal_buttons else None
             journal_children = ([node.get("name")
                                  for node in journal_button.iter("field")]

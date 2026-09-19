@@ -579,6 +579,31 @@ def test_tc215(ctx):
                        "has_tracking": flags.get("has_tracking")})
 
         with ctx.step("Press Validate."):
+            # NOT YET DIAGNOSED, and the evidence so far is recorded here
+            # so the next attempt does not repeat it.
+            #
+            # button_validate raises "You need to supply a Lot/Serial
+            # Number", which means stock_picking_auto_create_lot's
+            # _set_auto_lot() ran (the override calls it BEFORE super(),
+            # stock_picking.py:66-68) and left lot_name empty.
+            #
+            # Ruled out, all measured on d1v19:
+            #   * the module is installed, 19.0.1.0.0
+            #   * stock.picking.type.auto_create_lot exists and is True on
+            #     the fixture type (asserted in step 2 above)
+            #   * product.template.auto_create_lot exists and is True, and
+            #     product.product.auto_create_lot is related to it, so the
+            #     filter's `x.product_id.auto_create_lot` term resolves
+            #   * stock.picking.move_line_ids and stock.move.line.lot_name
+            #     both exist and are stored
+            #   * the picking is 'assigned' with exactly two move lines,
+            #     both empty of lot_id and lot_name (asserted in step 4)
+            #
+            # So every term of _set_auto_lot's filter looks satisfiable and
+            # the write target exists. Settling it needs to see INSIDE the
+            # call — which RPC cannot do: _set_auto_lot is private and
+            # "Private methods cannot be called remotely". The next step is
+            # an Odoo shell on this database, not another RPC probe.
             raised, message, result = _press_validate(rpc, picking_id)
             ctx.log(f"button_validate raised={raised} message={message!r} "
                     f"result={result!r}")

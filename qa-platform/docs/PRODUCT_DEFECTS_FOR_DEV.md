@@ -435,10 +435,69 @@ accounting group so that the deletion right is the only thing it varies.
 `mrp.production` — v19 turned `lot_producing_id` into the many2many
 `lot_producing_ids`. Blocks `TEST-WF010-TC346`.
 
-### 3.2 `Expected singleton` on the quality-check wizard
+### 3.2 WITHDRAWN — the quality-check singleton was our own bracket
 
-`quality.check.action_open_quality_check_wizard` is called with a
-multi-record set. Blocks 1 case in WF-015.
+**This entry was wrong and is retracted.**
+
+Core's `action_open_quality_check_wizard` has no `ensure_one()` and
+deliberately supports several checks — it builds `check_ids` from all of
+them. The QA helper passed the ids one bracket too deep, exactly as in 1.3,
+so `browse([[a, b]])` produced a recordset whose `_ids` held a list,
+`sorted(self.ids)[0]` was `[a, b]`, and `browse([a, b])` reached
+`_get_check_action_name()`'s own `ensure_one()`.
+
+`TEST-WF015-TC214` PASSES. Nothing to fix.
+
+---
+
+### 3.4 OPEN QUESTION — automated stock valuation posts nothing
+
+Not filed as a defect: it is a configuration question the accounting team
+should answer, and the numbers are here so they can.
+
+A receipt of a storable product in a `real_time` category completes and is
+valued — `stock.move.value = 50.00`, `state = 'done'` — and **no journal
+entry is written**. `stock.move.account_move_id` stays empty.
+
+What changed on v19:
+
+* `product.category.property_stock_account_input_categ_id` and
+  `..._output_categ_id` are **gone**. No field named `interim`,
+  `input_categ` or `output_categ` exists on any model.
+* `stock.valuation.layer` is **gone** — `ir_model` has no such row.
+  Valuation lives on `stock.move` itself (`value`, `is_valued`,
+  `remaining_value`).
+* v19 adds `product.category.account_stock_variation_id`, **related** to
+  `property_stock_valuation_account_id.account_stock_variation_id` — the
+  counter-account now hangs off `account.account`.
+
+Measured on d1v19: that column is **NULL on all 188 accounts**. With no
+counter-leg, real-time valuation has nothing to post against.
+
+**If that is not intended, every receipt and delivery on v19 is producing
+no valuation entry** — which would reach far past this case, into the
+WF-013 COGS suite. Recorded by `TEST-WF015-TC220`, which BLOCKS with this
+evidence rather than reporting a wrong counter.
+
+---
+
+### 3.5 OPEN — auto-created lot numbers do not appear
+
+`stock_picking_auto_create_lot` is installed (19.0.1.0.0) and its
+`button_validate` calls `_set_auto_lot()` before `super()`, yet validating
+a receipt of a lot-tracked, `auto_create_lot` product on an
+`auto_create_lot` operation type raises *"You need to supply a Lot/Serial
+Number"*.
+
+Ruled out on d1v19: the module is installed; `stock.picking.type`,
+`product.template` and `product.product` all carry `auto_create_lot` and
+the fixture sets it; `move_line_ids` and `lot_name` both exist and are
+stored; the picking is `assigned` with two move lines, both empty.
+
+So every term of the filter looks satisfiable. Settling it needs to see
+inside the call, which RPC cannot do — `_set_auto_lot` is private and
+"Private methods cannot be called remotely". **Next step: an Odoo shell on
+this database.** Recorded by `TEST-WF015-TC215`, still failing.
 
 ### 3.3 WITHDRAWN — `KeyError: 'traceback'` was a session artefact
 
