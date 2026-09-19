@@ -61,18 +61,71 @@ def set_stock(ctx, product_id: int, quantity: float,
     if not location_id:
         ctx.log("[warn] no internal stock location found — stock not set")
         return None
+    # inventory_mode is REQUIRED, and its absence is silent.
+    # inventory_quantity_auto_apply is a non-stored field whose INVERSE
+    # applies the count, and that inverse opens with
+    #
+    #     if not self._is_inventory_mode():
+    #         return
+    #
+    # (v19 addons/stock/models/stock_quant.py:229-230). Without the context
+    # key the write is accepted, raises nothing, and applies nothing.
+    # Measured: the quant came back holding 0.0 after asking for 100.0,
+    # while the caller believed the warehouse was stocked. The delivery then
+    # stayed 'confirmed' reserving nothing, and four WF-011 cases reported a
+    # reservation failure that was really an empty warehouse.
+    inventory_ctx = {"inventory_mode": True}
+
+    # Applying a count runs dto_cycle_count's _apply_inventory override,
+    # which calls
+    #     quant.cycle_count_category_id._calculate_scheduled_count_date(...)
+    # with no guard for an EMPTY category, and that method opens with
+    # ensure_one() (dto_cycle_count/models/stock_quant.py:36 ->
+    # cycle_count_category.py:23). A product with no cycle-count category
+    # therefore cannot have its quantity set at all:
+    # "ValueError: Expected singleton: cycle.count.category()".
+    #
+    # That is a PRODUCT defect and it is reported, not worked around — v17
+    # carries the identical call with the identical absence of a guard, and
+    # 1,789 quants on d1v19 have no category today. What is done here is
+    # only to give the FIXTURE's own product one, which a real catalogued
+    # product would have, so that set_stock can do its job.
+    if rpc.field_exists("product.product", "cycle_count_category_id"):
+        row = rpc.read("product.product", [product_id],
+                       ["cycle_count_category_id"])[0]
+        if not row.get("cycle_count_category_id"):
+            categories = rpc.search("cycle.count.category", [], limit=1,
+                                    order="id")
+            if categories:
+                rpc.write("product.product", [product_id],
+                          {"cycle_count_category_id": categories[0]})
+                ctx.log(f"assigned cycle.count.category {categories[0]} to "
+                        f"fixture product {product_id} — without one, "
+                        "applying an inventory count raises Expected "
+                        "singleton")
+
     found = rpc.search("stock.quant",
                        [("product_id", "=", product_id),
                         ("location_id", "=", location_id)], limit=1)
     if found:
-        rpc.write("stock.quant", found,
-                  {"inventory_quantity_auto_apply": quantity})
-        return found[0]
-    return rpc.create("stock.quant", {
-        "product_id": product_id,
-        "location_id": location_id,
-        "inventory_quantity_auto_apply": quantity,
-    })
+        quant_id = found[0]
+    else:
+        quant_id = rpc.call("stock.quant", "create",
+                            {"product_id": product_id,
+                             "location_id": location_id},
+                            context=inventory_ctx)
+    rpc.call("stock.quant", "write", [quant_id],
+             {"inventory_quantity_auto_apply": quantity},
+             context=inventory_ctx)
+
+    # Read back rather than trust: this helper is the precondition of every
+    # delivery in the platform, and a silent zero here surfaces much later as
+    # "the picking did not reserve".
+    applied = rpc.read("stock.quant", [quant_id], ["quantity"])[0]["quantity"]
+    if abs(applied - quantity) > 0.0001:
+        ctx.log(f"[warn] stock.quant {quant_id} holds {applied} after asking "
+                f"for {quantity} — the inventory count did not apply")
+    return quant_id
 
 
 def order_pickings(rpc, order_id: int, code: str = "outgoing") -> list:

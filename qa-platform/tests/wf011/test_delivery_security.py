@@ -422,7 +422,27 @@ def _make_delivery_fixture(ctx, label: str, qty: float = FULL_QTY):
             "whole recordset. A multi-step delivery route on this warehouse "
             "changes what the case is measuring, so it is reported rather "
             "than measured.")
-    return order_id, pickings[0]["id"], product_id, partner_id
+    # DIAGNOSTIC: four cases in this file assert the delivery is fully
+    # reserved. When it is not, the picking state alone cannot say whether
+    # the stock was never placed, was placed somewhere else, or was placed
+    # and not reserved. These three reads separate them.
+    rpc = ctx.adapter.rpc
+    picking_id = pickings[0]["id"]
+    quants = rpc.search_read(
+        "stock.quant", [("product_id", "=", product_id)],
+        ["location_id", "quantity", "reserved_quantity", "available_quantity"])
+    for _q in quants:
+        ctx.log(f"  quant: {_q!r}")
+    _pick = rpc.read("stock.picking", [picking_id],
+                     ["state", "location_id", "picking_type_id",
+                      "scheduled_date"])[0]
+    ctx.log(f"  picking: {_pick!r}")
+    _mv = rpc.search_read("stock.move", [("picking_id", "=", picking_id)],
+                          ["state", "product_uom_qty", "quantity",
+                           "location_id", "picked"])
+    for _m in _mv:
+        ctx.log(f"  move: {_m!r}")
+    return order_id, picking_id, product_id, partner_id
 
 
 @test_case(

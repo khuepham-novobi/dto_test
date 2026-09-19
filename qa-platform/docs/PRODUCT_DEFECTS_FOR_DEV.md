@@ -428,6 +428,56 @@ accounting group so that the deletion right is the only thing it varies.
 
 ---
 
+### 2.9 A product with no cycle-count category cannot have its stock adjusted
+
+**`project-addons/dto_cycle_count/models/stock_quant.py:36`**
+
+```python
+scheduled_count_date = quant.cycle_count_category_id._calculate_scheduled_count_date(last_count_date)
+```
+
+and `cycle_count_category.py:23`:
+
+```python
+def _calculate_scheduled_count_date(self, last_count_date):
+    self.ensure_one()
+```
+
+`cycle_count_category_id` is related to the product and may legitimately be
+EMPTY. There is no guard, so applying an inventory count on such a quant
+raises:
+
+```
+ValueError: Expected singleton: cycle.count.category()
+```
+
+The override runs inside core's `_apply_inventory`, so the whole
+adjustment is rolled back — an Update Quantity that the operator believes
+they just saved does not happen.
+
+**How reachable it is on d1v19**
+
+| | |
+|---|---|
+| active products with no cycle-count category | **148 of 21,352** |
+| quants with no category today | **1,789** |
+
+**Not a v19 regression.** v17 carries the identical call with the identical
+absence of a guard (`dto_17_custom/.../dto_cycle_count/models/stock_quant.py`).
+
+**Suggested fix** — skip when the category is empty, or give
+`_calculate_scheduled_count_date` an empty-recordset branch instead of
+`ensure_one()`.
+
+**Found by** `TEST-WF011-TC158`-`TC161`, but only after a QA-side bug was
+fixed: `set_stock` was writing `inventory_quantity_auto_apply` without
+`inventory_mode` in the context, so the inverse returned silently
+(v19 `addons/stock/models/stock_quant.py:229-230`), the warehouse stayed
+empty and `_apply_inventory` was never reached. An empty warehouse was
+hiding this defect.
+
+---
+
 ## Severity 3 — v19 API changes still to be worked through
 
 ### 3.1 `You cannot set more than 1 lot`
