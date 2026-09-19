@@ -52,6 +52,12 @@ def sweep_products(rpc: OdooRPC, name_prefix: str):
                 pass
 
 
+#: How many records a failed batch unlink may be retried one at a time.
+#: Each failure costs a savepoint rollback; see sweep_model for why this is
+#: bounded rather than unlimited.
+_UNLINK_ONE_BY_ONE_LIMIT = 20
+
+
 def sweep_model(rpc: OdooRPC, model: str, domain: list):
     """Remove every record the domain matches, one way or another.
 
@@ -76,12 +82,27 @@ def sweep_model(rpc: OdooRPC, model: str, domain: list):
     except OdooRPCError:
         pass
 
-    stuck = []
-    for record_id in ids:
-        try:
-            rpc.call(model, "unlink", [record_id])
-        except OdooRPCError:
-            stuck.append(record_id)
+    # The per-record fallback is CAPPED, and that cap is not cosmetic.
+    # Every unlink that raises rolls back a PostgreSQL savepoint; a few
+    # hundred of them in one sweep overflows the subtransaction cache. It
+    # segfaulted a backend twice on 2026-09-19 (postgres 16, "server
+    # process was terminated by signal 11"), each time mid-sweep on a long
+    # run of single-row DELETE FROM product_product, taking ~34 unrelated
+    # cases down with the database each time.
+    #
+    # So: try individually only while the set is small enough to be worth
+    # it, and archive the rest in ONE write. Archiving achieves what a
+    # sweep needs — the records leave every default search and stop
+    # colliding with the next run — without the savepoint storm.
+    if len(ids) <= _UNLINK_ONE_BY_ONE_LIMIT:
+        stuck = []
+        for record_id in ids:
+            try:
+                rpc.call(model, "unlink", [record_id])
+            except OdooRPCError:
+                stuck.append(record_id)
+    else:
+        stuck = list(ids)
     if stuck and rpc.field_exists(model, "active"):
         try:
             rpc.write(model, stuck, {"active": False})
