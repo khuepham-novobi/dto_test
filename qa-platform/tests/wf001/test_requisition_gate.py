@@ -70,7 +70,8 @@ from tests.wf001.common import (ANALYTIC_PLAN_XMLIDS,  # noqa: F401
                                 any_uom, contact_name, csv_bytes,
                                 distribution_accounts, file_message, fx,
                                 item_code, m2o_id, make_folder, make_server,
-                                memo, order_lines, order_type_labels,
+                                memo, menu_groups_field, order_lines,
+                                order_type_labels,
                                 orders_for, plans_of, population_counts,
                                 require_import_prerequisites,
                                 require_mail_offline,
@@ -534,8 +535,12 @@ def test_tc342(ctx):
         menu_id = rpc.ref(WIZARD_MENU_XMLID)
         ctx.log(f"{WIZARD_MENU_XMLID} resolves to {menu_id!r}")
         if menu_id:
+            # v19 renamed ir.ui.menu.groups_id to group_ids
+            # (base/models/ir_ui_menu.py:32 -> :29) with no alias, so the
+            # v17 name raises on read. Resolved through the helper.
+            groups_field = menu_groups_field(rpc)
             menu = rpc.read("ir.ui.menu", [menu_id],
-                            ["name", "parent_id", "action", "groups_id"])[0]
+                            ["name", "parent_id", "action", groups_field])[0]
             ctx.log(f"the Import Workday Requisition menu: {menu!r}")
             ctx.check_true(
                 "its parent anchor resolved — delta §3.5 lists "

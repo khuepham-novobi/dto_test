@@ -152,6 +152,7 @@ def test_tc307(ctx):
                 "tax_ids": [(6, 0, [])]})],
             "attachment_ids": [(0, 0, {
                 "name": fx(f"{MARK} B1.pdf"),
+                "res_model": "account.move",
                 "datas": "JVBERi0xLjQK"})],
         })
         rpc.call("account.move", "action_post", [b1])
@@ -821,6 +822,7 @@ def test_tc315(ctx):
                     "tax_ids": [(6, 0, [])]})],
                 "attachment_ids": [(0, 0, {
                     "name": fx(f"{MARK} V3.pdf"),
+                    "res_model": "account.move",
                     "datas": "JVBERi0xLjQK"})],
             })
             rpc.call("account.move", "action_post", [v3])

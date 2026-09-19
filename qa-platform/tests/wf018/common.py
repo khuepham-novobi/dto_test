@@ -579,7 +579,8 @@ def attach_to_move(rpc, move_id, via="move", name=None):
             "name": name, "datas": payload,
             "res_model": "account.move", "res_id": move_id})
     return rpc.write("account.move", [move_id], {
-        "attachment_ids": [(0, 0, {"name": name, "datas": payload})]})
+        "attachment_ids": [(0, 0, {"name": name, "datas": payload,
+                                   "res_model": "account.move"})]})
 
 
 def make_bill(ctx, vendor_id, lines, ref_suffix, label="bill",

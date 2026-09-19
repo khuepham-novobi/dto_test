@@ -110,6 +110,17 @@ def test_tc339(ctx):
         uom_name = any_uom(ctx)
         state_row, country_row = state_and_country(ctx)
         label = sorted(labels)[0]
+        # dto_account's Gate 2 is order-type dependent
+        # (dto_account/models/sale_order.py:84-112): a 'project' order MUST
+        # carry a Project-plan account, a 'buy' order MUST carry a
+        # Customer-Contract one, and 'inventory'/'cost_center' must carry
+        # NEITHER. The fixture therefore has to know which key it drew, or
+        # action_confirm refuses with 'Project is required' /
+        # 'Customer Contract is required' before this case's subject — a
+        # CONFIRMED order — can exist at all.
+        order_type_key = labels[label]
+        ctx.log(f"order type for this fixture: {label!r} -> "
+                f"{order_type_key!r}")
 
     company_id = m2o_id(rpc.read("res.users", [rpc.uid],
                                  ["company_id"])[0]["company_id"])
@@ -138,8 +149,10 @@ def test_tc339(ctx):
                           order_type_label=label,
                           requisition_num=memo("REQ-C"),
                           internal_memo=memo("IM-C"),
-                          project=analytic_name("PRJ-C"),
-                          contract=analytic_name("CC-C"))
+                          project=(analytic_name("PRJ-C")
+                                   if order_type_key == "project" else ""),
+                          contract=(analytic_name("CC-C")
+                                    if order_type_key == "buy" else ""))
             first = [
                 row(item=item_a, description=fx(f"{MARK} A"), quantity="2",
                     unit_price="10.0", **common),
@@ -226,8 +239,10 @@ def test_tc339(ctx):
                           requisition_num=memo("REQ-C"),
                           internal_memo=so_c_name,
                           supplier_memo=fx(f"{MARK} UPDATED MEMO"),
-                          project=analytic_name("PRJ-C"),
-                          contract=analytic_name("CC-C"))
+                          project=(analytic_name("PRJ-C")
+                                   if order_type_key == "project" else ""),
+                          contract=(analytic_name("CC-C")
+                                    if order_type_key == "buy" else ""))
             second = [
                 # ITEM-A: quantity changed 2 -> 7
                 row(item=item_a, description=fx(f"{MARK} A"), quantity="7",

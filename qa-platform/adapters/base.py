@@ -232,6 +232,24 @@ class OdooAdapter:
     # read it from the adapter so no version branch reaches a suite.
     user_groups_field = "group_ids"
 
+    # Groups a session needs, ON TOP of its business role, before it may
+    # drive an `onchange` on product.product.
+    #
+    # v19 added an access check to the onchange RPC entry point —
+    # `self.check_access('write' if self else 'create')`
+    # (v19 web/models/models.py:2016); v17's implementation has no
+    # check_access at all. And v19 MOVED product write rights: the v17 row
+    # granting stock.group_stock_manager 1,1,1,1 on product.product
+    # (v17 stock/security/ir.model.access.csv:22) was DELETED, leaving
+    # stock read-only (v19 :15) and write/create with
+    # product.group_product_manager alone
+    # (v19 product/security/ir.model.access.csv, access_product_product_manager).
+    #
+    # MUST stay empty on v17: product.group_product_manager does not exist
+    # there, and a session builder that resolves group xml ids would BLOCK
+    # on the unresolvable name.
+    product_write_group_xmlids: list[str] = []
+
     def __init__(self, env: EnvironmentConfig):
         self.env = env
         self.rpc = OdooRPC(env)

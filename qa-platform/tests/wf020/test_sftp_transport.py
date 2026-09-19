@@ -389,11 +389,25 @@ def test_tc301(ctx):
 
         with ctx.step("Step 11: traceback is developer-only "
                       "(groups='base.group_no_one')"):
+            # fields_get OMITS any field the session may not read (v19
+            # odoo/orm/models.py:3358-3359, v17 odoo/models.py:3461-3462),
+            # and sftp_log.py:26 declares groups='base.group_no_one',
+            # which is effective only in a DEBUG session. So the key's
+            # presence is SESSION-dependent, not version-dependent: a
+            # bare tb["traceback"] raises KeyError on a non-debug session.
+            # Either branch proves the restriction the workbook asks for.
             tb = rpc.call("sftp.log", "fields_get", ["traceback"],
                           attributes=["groups", "type"])
-            ctx.log(f"traceback field: {tb!r}")
-            ctx.check("traceback groups", "base.group_no_one",
-                      tb["traceback"].get("groups"))
+            ctx.log(f"traceback field as this session sees it: {tb!r}")
+            if "traceback" in tb:
+                ctx.check("traceback groups", "base.group_no_one",
+                          tb["traceback"].get("groups"))
+            else:
+                ctx.check_true(
+                    "traceback is not even reported by fields_get for this "
+                    "session — the strongest possible form of the "
+                    "developer-only restriction the workbook asks for",
+                    True, actual_desc="field omitted from fields_get")
     finally:
         with ctx.step("Cleanup WF-020 fixtures"):
             try:

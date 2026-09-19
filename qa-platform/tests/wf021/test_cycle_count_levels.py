@@ -393,8 +393,15 @@ def _acting_session(ctx, suffix, group_xmlids, role):
 
 def _stock_manager_session(ctx):
     """TD-U-04 dto_stock_mgr — an Inventory Manager session."""
+    # product_write_group_xmlids is [] on v17 and
+    # ['product.group_product_manager'] on v19: the role is unchanged, but
+    # v19's onchange endpoint checks write/create on product.product and
+    # stock.group_stock_manager no longer grants it. Routed through the
+    # adapter so no `if version` sits in a test body
+    # (AUTOMATION_CONVENTIONS.md, "Version-dependent behaviour").
     return _acting_session(ctx, "mgr",
-                           [GROUP_STOCK_USER, GROUP_STOCK_MANAGER],
+                           [GROUP_STOCK_USER, GROUP_STOCK_MANAGER]
+                           + list(ctx.adapter.product_write_group_xmlids),
                            "TD-U-04 dto_stock_mgr (Inventory Manager)")
 
 

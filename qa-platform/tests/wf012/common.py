@@ -169,6 +169,9 @@ def sweep_wf012(rpc):
                 pass
 
     sweep_products(rpc, MARK)
+    sweep_model(rpc, "account.analytic.account",
+                [("name", "like", f"{MARK} %"),
+                 ("active", "in", [True, False])])
     sweep_model(rpc, "res.partner", [("name", "like", f"{MARK} %"),
                                      ("user_ids", "=", False),
                                      ("active", "in", [True, False])])
@@ -279,13 +282,61 @@ def ensure_product(ctx, label="Item", price=10.0, cost=9.0,
     return variant[0]["id"]
 
 
+# dto_account/models/account_analytic_plan.py:6-12 — the two plans the
+# confirmation gate resolves by xml id.
+ANALYTIC_PLANS = {
+    "project": "dto_account.project_analytic_plan",
+    "contract": "dto_account.customer_contract_analytic_plan",
+}
+
+
+def ensure_analytic_account(rpc, plan_id, label="Analytic") -> int:
+    name = fx(f"{MARK} {label}")
+    found = rpc.search("account.analytic.account",
+                       [("name", "=", name), ("plan_id", "=", plan_id),
+                        ("active", "in", [True, False])], limit=1)
+    return found[0] if found else rpc.create(
+        "account.analytic.account", {"name": name, "plan_id": plan_id})
+
+
+def gate_analytic(ctx, order_type):
+    """The analytic distribution dto_account's Gate 2 demands, or None.
+
+    ``dto_account/models/sale_order.py:81-112`` dispatches on order_type:
+    ``project`` requires every line's distribution to resolve accounts and
+    for ALL of them to be Project-plan; ``buy`` requires the same against
+    the Customer-Contract plan; ``inventory`` and ``cost_center`` require
+    NO distribution at all. Note the ``any(account.plan_id != plan)`` term
+    — a project order carrying a contract account as well is REFUSED, so
+    the two cannot simply both be supplied.
+
+    Returning None for the two no-distribution types is what keeps them
+    confirmable; returning None when a plan xml id does not resolve leaves
+    the original (pre-fix) behaviour, so a target without dto_account's
+    plans fails the same way it did before rather than differently.
+    """
+    plan_key = {"project": "project", "buy": "contract"}.get(order_type)
+    if plan_key is None:
+        return None
+    plan_id = ctx.adapter.rpc.ref(ANALYTIC_PLANS[plan_key])
+    if not plan_id:
+        return None
+    account_id = ensure_analytic_account(
+        ctx.adapter.rpc, plan_id, f"{order_type.title()} Gate")
+    return {str(account_id): 100}
+
+
 def make_sale_order(ctx, order_type="project", qty=1.0, price=10.0,
                     product_id=None, label="Order", partner_id=None,
                     memo=None, analytic=None, requester_email=None):
     """A confirmable DataOne sales order of the given type.
 
-    Carries the three confirmation gates dto_sale enforces: a promised ship
-    date on every line, a requester email, and a non-empty memo. ``memo``
+    Carries all FOUR confirmation gates: a promised ship date on every line
+    and a requester email and a non-empty memo (dto_sale / dto_sale_workday),
+    plus the order-type-dependent analytic distribution dto_account's Gate 2
+    demands (``gate_analytic``). Omitting the fourth is why every
+    ``project`` fixture used to die on 'Project is required' and every
+    ``buy`` one on 'Customer Contract is required'. ``memo``
     can be passed as ``""`` deliberately — that is TC290's negative fixture,
     and the resulting TypeError aborts the DELIVERY, not the confirmation.
     """
@@ -294,6 +345,10 @@ def make_sale_order(ctx, order_type="project", qty=1.0, price=10.0,
     product_id = product_id or ensure_product(ctx)
     line = {"product_id": product_id, "product_uom_qty": qty,
             "price_unit": price, "requested_delivery_date": "2099-12-31"}
+    # `is None` and not falsy: a caller may pass {} deliberately to assert
+    # the no-distribution types, and TC290 passes its own explicit map.
+    if analytic is None:
+        analytic = gate_analytic(ctx, order_type)
     if analytic:
         line["analytic_distribution"] = analytic
     values = {

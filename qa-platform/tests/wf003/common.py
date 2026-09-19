@@ -343,6 +343,36 @@ def plain_text(html: str) -> str:
     return " ".join(_TAG_RE.sub(" ", html or "").split())
 
 
+def revision_notice(ctx, label, source_name, new_name) -> str:
+    """The chatter notice base_revision posts — PER RECORD and PER VERSION.
+
+    v17 / OCA 17.0 built ONE body and posted the same string to both
+    records::
+
+        msg = _("New revision created: %s") % copied_rec.name
+        copied_rec.message_post(body=msg)
+        rec.message_post(body=msg)
+
+    OCA 19.0 posts two DIFFERENT bodies and points each at the other record
+    (3rd-addons/base_revision/models/base_revision.py:149-157)::
+
+        copied_rec <- "New revision created from: %s" % rec._get_html_link()
+        rec        <- "New revision created: %s"      % copied_rec._get_html_link()
+
+    So on v19 the SOURCE names the new revision and the COPY names the
+    source. ``label`` is 'source' for the record that was revised and
+    anything else for the revision itself. Pair this with ``plain_text``:
+    ``_get_html_link`` wraps the name in an ``<a>`` (v19
+    mail/models/models.py:853-859), so a raw-HTML substring test misses.
+
+    Lives here rather than as an ``if version`` in a test body, per
+    AUTOMATION_CONVENTIONS.md "Version-dependent behaviour".
+    """
+    if ctx.env.version == "17" or label == "source":
+        return f"New revision created: {new_name}"
+    return f"New revision created from: {source_name}"
+
+
 def chatter_bodies(rpc, order_id) -> list[str]:
     msgs = rpc.search_read(
         "mail.message",

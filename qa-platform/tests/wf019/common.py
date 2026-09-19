@@ -187,8 +187,18 @@ def sweep_wf019(rpc):
     _TOKEN = uuid.uuid4().hex[:6]
 
     # 1. Payments first: they hold the reconciliations that pin the bills.
-    payments = rpc.search("account.payment",
-                          [("workday_document", "like", f"%-{MARK}%")])
+    #
+    # workday_document is MODULE-OWNED, not core: dto_account_workday
+    # declares it as related('move_id.workday_document')
+    # (models/account_payment.py:39-41). On a target where that module is
+    # not installed the field does not exist, and an unguarded search
+    # domain raises OdooRPCError *here* — before require_payment_import
+    # can report the same fact as a precise BLOCKED. The guard is what
+    # lets the probe speak; it is the same shape the core `memo` search
+    # below already uses, applied to the field that actually needs it.
+    payments = rpc.search(
+        "account.payment", [("workday_document", "like", f"%-{MARK}%")]) \
+        if rpc.field_exists("account.payment", "workday_document") else []
     payments += rpc.search(
         "account.payment", [("memo", "like", f"{MARK}-%")]) \
         if rpc.field_exists("account.payment", "memo") else []
@@ -420,6 +430,7 @@ def make_bill(ctx, vendor_id, amount, ref_suffix, label="bill",
         })],
         "attachment_ids": [(0, 0, {
             "name": fx(f"{MARK} {label}.pdf"),
+            "res_model": "account.move",
             "datas": base64.b64encode(b"%PDF-1.4 WF019 QA").decode()})],
     })
     rpc.call("account.move", "action_post", [move_id])
