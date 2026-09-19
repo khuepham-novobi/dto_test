@@ -366,6 +366,27 @@ def bill_from_order(ctx, order_id, invoice_date="2026-01-15"):
     return bill_id
 
 
+def two_posting_accounts(ctx):
+    """(debit, credit) account ids for a BALANCED miscellaneous entry.
+
+    ``account.account.deprecated`` was REMOVED in v19 (v17
+    account/models/account_account.py:48; v19 :42 keeps only ``active``,
+    which search already honours through active_test), so the filter is
+    applied only where the field exists.
+    """
+    rpc = ctx.adapter.rpc
+    domain = ([("deprecated", "=", False)]
+              if rpc.field_exists("account.account", "deprecated") else [])
+    rows = rpc.search_read("account.account", domain, ["code"], limit=2,
+                           order="code")
+    if len(rows) < 2:
+        ctx.blocked(
+            "Fewer than two usable account.account records exist on "
+            f"{ctx.env.key}; a balanced two-line 'entry' cannot be built, "
+            "so the ungated-move-types case cannot run.")
+    return rows[0]["id"], rows[1]["id"]
+
+
 def make_bare_bill(ctx, vendor_id, product_id, price=25.0, qty=1.0,
                    move_type="in_invoice", label="bill"):
     """A draft move of the given type with one line and no attachment."""
@@ -385,8 +406,24 @@ def make_bare_bill(ctx, vendor_id, product_id, price=25.0, qty=1.0,
         })],
     }
     if move_type == "entry":
+        # A miscellaneous entry has no INVOICE lines, but it still needs
+        # balanced journal items: v19 refuses to post a move with no
+        # non-section line — "Even magicians can't post nothing!"
+        # (v19 account/models/account_move.py:5660). Popping the lines and
+        # adding nothing produced an empty move that could never reach
+        # 'posted', so the ungated-move-type assertion was measuring the
+        # fixture rather than the gate.
         values.pop("invoice_line_ids")
         values.pop("invoice_date", None)
+        debit_account, credit_account = two_posting_accounts(ctx)
+        values["line_ids"] = [
+            (0, 0, {"name": fx(f"{MARK} {label} debit"),
+                    "account_id": debit_account, "debit": price,
+                    "credit": 0.0}),
+            (0, 0, {"name": fx(f"{MARK} {label} credit"),
+                    "account_id": credit_account, "debit": 0.0,
+                    "credit": price}),
+        ]
     return rpc.create("account.move", values)
 
 

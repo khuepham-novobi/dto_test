@@ -719,6 +719,13 @@ def test_tc175(ctx):
             # "exactly N" assertion. The workbook agrees: its step 3 asks
             # for len(before) >= 3, which this test asserts below.
             quant_ids = quants_of(rpc, product_id)
+            # The INTERNAL-location subset, for any "exactly N" assertion:
+            # quants_of is unscoped by design (see its docstring and the
+            # comment above), so it also carries add_stock's counterpart
+            # quant in the usage='inventory' loss location — which
+            # Physical Inventory correctly does NOT list.
+            internal_quant_ids = [quant_of(rpc, product_id, loc)
+                                  for loc in locations]
             ctx.check("one quant per fixture internal location",
                       {loc: True for loc in locations},
                       {loc: quant_of(rpc, product_id, loc) is not None
@@ -834,7 +841,7 @@ def test_tc175(ctx):
                 "stock.quant",
                 PHYSICAL_INVENTORY_DOMAIN + [("id", "in", quant_ids)])
             ctx.check("Physical Inventory lists all three quants",
-                      sorted(quant_ids), sorted(listed))
+                      sorted(internal_quant_ids), sorted(listed))
             ctx.check("every quant is due on the Level A date",
                       {qid: True for qid in sorted(quant_ids)},
                       {qid: due_on(rpc, qid, due_level_a)

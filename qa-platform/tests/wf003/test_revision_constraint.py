@@ -110,8 +110,17 @@ def test_tc098(ctx):
                 "the reflected object enforces uniqueness "
                 "('u' = table constraint, 'i' = unique index)",
                 row["type"] in ("u", "i"), actual_desc=repr(row["type"]))
-            ctx.check("owning module", "sale_order_revision",
-                      (row["module"] or [None, None])[1])
+            # Over RPC a Many2one reads back as [id, DISPLAY NAME], and
+            # ir.module.module._rec_name is 'shortdesc' (v17
+            # base/models/ir_module.py:153, v19 :159) — so index [1] is
+            # 'Sale order revisions', the manifest's name, and can never
+            # equal the technical name. Read the technical name instead.
+            module_id = m2o_id(row["module"])
+            module_name = (rpc.read("ir.module.module", [module_id],
+                                    ["name"])[0]["name"]
+                           if module_id else None)
+            ctx.log(f"owning module: id={module_id} name={module_name!r}")
+            ctx.check("owning module", "sale_order_revision", module_name)
             definition = (row["definition"] or "").lower()
             columns = [c for c in ("unrevisioned_name", "revision_number",
                                    "company_id") if c in definition]

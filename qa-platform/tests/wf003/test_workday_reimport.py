@@ -43,9 +43,10 @@ test defect.
 """
 from framework.registry import test_case
 from tests.wf003.common import (MARK, WORKFLOW, WORKFLOW_NAME,  # noqa: F401
-                                fx, m2o_id, make_quotation, read_order,
-                                require_revision_stack, revision_of,
-                                set_sent, sweep_wf003, trace)
+                                chatter_bodies, fx, m2o_id, make_quotation,
+                                plain_text, read_order,
+                                require_revision_stack, revision_notice,
+                                revision_of, set_sent, sweep_wf003, trace)
 
 SFTP_USAGE = "workday_requisition"
 
@@ -163,16 +164,28 @@ def test_tc338(ctx):
             ctx.check("stat button resolves to", [order_id], listed)
 
         with ctx.step("Step 10: both chatters carry the revision notice"):
-            notice = f"New revision created: {rev1['name']}"
             for label, rec_id in (("SO-A", order_id),
                                   ("revision", rev1_id)):
-                bodies = [m["body"] or "" for m in rpc.search_read(
-                    "mail.message",
-                    [("model", "=", "sale.order"), ("res_id", "=", rec_id)],
-                    ["body"], order="id")]
+                # Two corrections to the v17-shaped assertion. (a) OCA 19.0
+                # posts a different body per record — the SOURCE names the
+                # revision, the COPY names the source
+                # (base_revision.py:149-157). (b) Both names go through
+                # _get_html_link(), so the body is
+                # "New revision created: <a ...>S06413-01</a>" and a raw
+                # substring test misses; match the RENDERED text, as the
+                # sibling case at test_revision_lifecycle.py:143 already
+                # does. The old actual_desc printed only a count, which is
+                # why the report shows "4 message(s)" and nothing to
+                # diagnose from — the bodies are now included.
+                notice = revision_notice(
+                    ctx, "source" if label == "SO-A" else "revision",
+                    so_a, rev1["name"])
+                bodies = [plain_text(b) for b in chatter_bodies(rpc, rec_id)]
                 ctx.check_true(f"{label} chatter carries the notice",
                                any(notice in b for b in bodies),
-                               actual_desc=f"{len(bodies)} message(s)")
+                               actual_desc=(f"{len(bodies)} message(s); "
+                                            f"looking for {notice!r}; "
+                                            f"bodies={bodies!r}"))
 
         with ctx.step("Convention rule 4: the Workday SFTP connector is "
                       "inactive on this QA target, so nothing here could "

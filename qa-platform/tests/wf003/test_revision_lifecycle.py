@@ -23,7 +23,8 @@ from framework.registry import test_case
 from tests.wf003.common import (MARK, WORKFLOW, WORKFLOW_NAME,  # noqa: F401
                                 chatter_bodies, fx, m2o_id, make_quotation,
                                 plain_text, read_order,
-                                require_revision_stack, revision_of,
+                                require_revision_stack, revision_notice,
+                                revision_of,
                                 set_sent, sweep_wf003, trace)
 
 
@@ -124,9 +125,15 @@ def test_tc095(ctx):
 
         with ctx.step("Step 8: both chatters contain "
                       "'New revision created: <new name>'"):
-            notice = f"New revision created: {new['name']}"
             for label, rec_id in (("source", order_id),
                                   ("revision", new_id)):
+                # OCA 19.0 posts a DIFFERENT body on each record — the
+                # source names the new revision, the copy names the source
+                # (base_revision.py:149-157) — where 17.0 posted one
+                # identical body to both. Resolved per record and per
+                # version by the helper.
+                notice = revision_notice(ctx, label, before["name"],
+                                         new["name"])
                 # Matched against the rendered text, not the raw HTML: the
                 # OCA 19.0 port posts the name through _get_html_link()
                 # (base_revision.py:151,155) where 17.0 interpolated it as
