@@ -40,6 +40,7 @@ from tests.wf007.common import (WORKFLOW, WORKFLOW_NAME, backorders_of,
                                 make_sale_order, mark_done,
                                 mark_done_with_backorder, mo_digits, mo_field,
                                 mo_name, open_namespace, producing_lots,
+                                require_packaging_workcentre,
                                 require_serial_stack, set_qty_producing,
                                 sweep_wf007, trace)
 
@@ -70,6 +71,7 @@ def _tracked_fixture(rpc, tracking="serial", qty=1.0, with_sale=True):
     traceability=trace("DATAONE-TC106"))
 def test_tc106(ctx):
     require_serial_stack(ctx)
+    require_packaging_workcentre(ctx)
     rpc = ctx.adapter.rpc
     open_namespace(ctx)
     try:
@@ -148,6 +150,7 @@ def test_tc107(ctx):
     would be left alone anyway. Both halves are asserted.
     """
     require_serial_stack(ctx)
+    require_packaging_workcentre(ctx)
     rpc = ctx.adapter.rpc
     open_namespace(ctx)
     try:
@@ -218,6 +221,7 @@ def test_tc108(ctx):
     below is computed through it.
     """
     require_serial_stack(ctx)
+    require_packaging_workcentre(ctx)
     rpc = ctx.adapter.rpc
     open_namespace(ctx)
     try:
@@ -270,6 +274,7 @@ def test_tc108(ctx):
     traceability=trace("DATAONE-TC110"))
 def test_tc110(ctx):
     require_serial_stack(ctx)
+    require_packaging_workcentre(ctx)
     rpc = ctx.adapter.rpc
     open_namespace(ctx)
     try:
@@ -341,6 +346,16 @@ def test_tc111(ctx):
 
         after mark_done:  state = 'to_close'   lot_producing_ids = []
 
+    Re-measured after Stage 7 deployed dto_mrp_account, whose Packaging gate
+    forced the fixture BoM to carry an operation (see PACKAGING_WORKCENTRE in
+    common.py)::
+
+        after mark_done:  state = 'progress'   lot_producing_ids = []
+
+    The finding is unchanged — the MO still does not reach ``done`` and still
+    carries no lot. Only the state it stops in moved, because an MO that now
+    has a work order sits in ``progress`` rather than ``to_close``.
+
     Neither half of the expectation holds: no lot is created and the MO does
     not reach ``done``. ``_eligible_for_auto_generate_serial()`` passes all
     four of its conditions here, so the shortfall is downstream — v19 routes
@@ -357,6 +372,7 @@ def test_tc111(ctx):
     rule 2). This is the multi-lot question the source defers to TODO(D-S2).
     """
     require_serial_stack(ctx)
+    require_packaging_workcentre(ctx)
     rpc = ctx.adapter.rpc
     open_namespace(ctx)
     try:
@@ -416,6 +432,7 @@ def test_tc112(ctx):
     measured, and noted in this module's docstring.
     """
     require_serial_stack(ctx)
+    require_packaging_workcentre(ctx)
     rpc = ctx.adapter.rpc
     open_namespace(ctx)
     try:

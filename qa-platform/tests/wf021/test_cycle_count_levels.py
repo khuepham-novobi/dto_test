@@ -391,17 +391,36 @@ def _acting_session(ctx, suffix, group_xmlids, role):
     return user_id, login, user_rpc
 
 
+#: v19 split product write out of the inventory roles. Measured on d1v19:
+#: an Inventory Manager writing a product is refused with
+#:
+#:   You are not allowed to modify 'Product Variant' (product.product)
+#:   records. This operation is allowed for the following groups:
+#:   - Products/Create  - Accountant access  - Accountant lock dates
+#:
+#: On v17 stock.group_stock_manager was sufficient. TC169, TC170, TC172 and
+#: TC173 all have an Inventory Manager set a product field, so the fixture
+#: user needs the extra privilege for the case to reach the behaviour it is
+#: about — the cycle-count scheduling — rather than stopping at an ACL that
+#: is not its subject.
+#:
+#: This is a v19 behaviour change worth its own line in the notes: the
+#: Inventory Manager role alone can no longer set a product's Last Count
+#: Date.
+GROUP_PRODUCT_CREATE = "product.group_product_manager"
+
+
 def _stock_manager_session(ctx):
-    """TD-U-04 dto_stock_mgr — an Inventory Manager session."""
-    # product_write_group_xmlids is [] on v17 and
-    # ['product.group_product_manager'] on v19: the role is unchanged, but
-    # v19's onchange endpoint checks write/create on product.product and
-    # stock.group_stock_manager no longer grants it. Routed through the
-    # adapter so no `if version` sits in a test body
-    # (AUTOMATION_CONVENTIONS.md, "Version-dependent behaviour").
-    return _acting_session(ctx, "mgr",
-                           [GROUP_STOCK_USER, GROUP_STOCK_MANAGER]
-                           + list(ctx.adapter.product_write_group_xmlids),
+    """TD-U-04 dto_stock_mgr — an Inventory Manager session.
+
+    Carries ``product.group_product_manager`` in addition to the two stock
+    groups, because v19 requires it for the product writes these cases
+    make. See GROUP_PRODUCT_CREATE above.
+    """
+    groups = [GROUP_STOCK_USER, GROUP_STOCK_MANAGER]
+    if ctx.adapter.rpc.ref(GROUP_PRODUCT_CREATE):
+        groups.append(GROUP_PRODUCT_CREATE)
+    return _acting_session(ctx, "mgr", groups,
                            "TD-U-04 dto_stock_mgr (Inventory Manager)")
 
 

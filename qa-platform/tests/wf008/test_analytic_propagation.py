@@ -812,8 +812,25 @@ def test_tc253(ctx):
             uom_field = ("product_uom"
                          if rpc.field_exists("stock.move", "product_uom")
                          else "product_uom_id")
+            # v19 removed stock.move.name (_rec_name = 'reference',
+            # stock/models/stock_move.py:22). dto_purchase's own
+            # test_wf014_open_flags.py:165 records the same fact.
+            #
+            # 'reference' is NOT a usable substitute: measured on d1v19 it
+            # is stored AND readonly (ir_model_fields.readonly = t), so
+            # writing it at create raises in its own right. The writable
+            # per-move description is description_picking, and when neither
+            # exists the move simply goes unlabelled — it is found through
+            # its locations and product, not its name.
+            label = {}
+            for candidate in ("name", "description_picking"):
+                if rpc.field_exists("stock.move", candidate):
+                    label = {candidate: fx(f"{MARK} TC253 "
+                                           f"virtual-to-virtual")}
+                    break
+            ctx.log(f"move label field: {list(label) or '(none available)'}")
             move_id = rpc.create("stock.move", {
-                "name": fx(f"{MARK} TC253 virtual-to-virtual"),
+                **label,
                 "product_id": component,
                 "product_uom_qty": 1.0,
                 uom_field: uom,

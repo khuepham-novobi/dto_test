@@ -70,8 +70,7 @@ from tests.wf001.common import (ANALYTIC_PLAN_XMLIDS,  # noqa: F401
                                 any_uom, contact_name, csv_bytes,
                                 distribution_accounts, file_message, fx,
                                 item_code, m2o_id, make_folder, make_server,
-                                memo, menu_groups_field, order_lines,
-                                order_type_labels,
+                                memo, order_lines, order_type_labels,
                                 orders_for, plans_of, population_counts,
                                 require_import_prerequisites,
                                 require_mail_offline,
@@ -132,7 +131,12 @@ def _ensure_known_product(ctx, code):
     if found:
         return found[0]["id"]
     from framework.qa_fixtures import with_categ
-    values = {"name": fx(f"{MARK} Finished cable assembly"),
+    # The name carries the item CODE. sale.order's confirmed-order activity
+    # renders each tracked line by its PRODUCT name, not by the line
+    # description, so products that share one name make the create, update
+    # and delete blocks indistinguishable from each other — measured on
+    # TEST-WF001-TC339, where all three lines read "Finished cable assembly".
+    values = {"name": fx(f"{MARK} Finished cable assembly {code}"),
               "default_code": code, "sale_ok": True,
               "taxes_id": [(6, 0, [])]}
     values.update(ctx.adapter.storable_product_values())
@@ -535,12 +539,14 @@ def test_tc342(ctx):
         menu_id = rpc.ref(WIZARD_MENU_XMLID)
         ctx.log(f"{WIZARD_MENU_XMLID} resolves to {menu_id!r}")
         if menu_id:
-            # v19 renamed ir.ui.menu.groups_id to group_ids
-            # (base/models/ir_ui_menu.py:32 -> :29) with no alias, so the
-            # v17 name raises on read. Resolved through the helper.
-            groups_field = menu_groups_field(rpc)
+            # v19 renamed ir.ui.menu.groups_id -> group_ids. Resolved
+            # rather than hardcoded so the case reads on both versions.
+            menu_group_field = ("groups_id"
+                                if rpc.field_exists("ir.ui.menu", "groups_id")
+                                else "group_ids")
             menu = rpc.read("ir.ui.menu", [menu_id],
-                            ["name", "parent_id", "action", groups_field])[0]
+                            ["name", "parent_id", "action",
+                             menu_group_field])[0]
             ctx.log(f"the Import Workday Requisition menu: {menu!r}")
             ctx.check_true(
                 "its parent anchor resolved — delta §3.5 lists "

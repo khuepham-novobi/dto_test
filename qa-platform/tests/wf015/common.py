@@ -1205,6 +1205,9 @@ def default_picking_type(rpc, code: str = "incoming",
     return rows[0]["id"]
 
 
+_TYPE_SEQ = {"n": 0}
+
+
 def make_picking_type(rpc, label: str = "IN", code: str = "incoming",
                       auto_create_lot: bool = False,
                       source_id: int | None = None) -> int:
@@ -1224,8 +1227,28 @@ def make_picking_type(rpc, label: str = "IN", code: str = "incoming",
     namespaced and its sequence prefix unique.
     """
     source_id = source_id or default_picking_type(rpc, code)
-    default = {"name": tag(f"{MARKER} {label}"),
-               "sequence_code": sku(label)[:16]}
+    name = tag(f"{MARKER} {label}")
+
+    # REUSE an existing type of the same name before copying another.
+    # Two cases call this with the same label inside one execution
+    # (TC215 and TC216 both ask for "AUTOLOT-IN"), and a second copy is not
+    # merely untidy: the sequence_code below used to be derived from the
+    # LABEL alone, so both types got the same prefix, both sequences started
+    # at 1, and the second picking created under either of them collided —
+    # "Reference must be unique per company". Measured on d1v19, where two
+    # AUTOLOT-IN types with the identical prefix WH/WF015-<token>-A/ were
+    # left behind by an earlier run.
+    existing = rpc.search("stock.picking.type",
+                          [("name", "=", name),
+                           ("active", "in", [True, False])], limit=1)
+    if existing:
+        return existing[0]
+
+    _TYPE_SEQ["n"] += 1
+    default = {"name": name,
+               # unique per call, so no two types can share a prefix even if
+               # they share a label
+               "sequence_code": f"{sku(label)[:12]}{_TYPE_SEQ['n']:02d}"}
     if auto_create_lot:
         default["auto_create_lot"] = True
     try:

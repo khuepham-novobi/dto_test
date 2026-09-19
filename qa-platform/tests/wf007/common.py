@@ -175,7 +175,15 @@ def product_tmpl_of(rpc, product_id: int) -> int:
 
 
 def make_bom(rpc, finished_id: int, component_id: int, qty: float = 1.0) -> int:
-    return rpc.create("mrp.bom", {
+    """A one-component BoM carrying the Packaging operation.
+
+    The operation is not decorative: dto_mrp_account refuses
+    ``button_mark_done`` unless the order has a work order on a work centre
+    literally named 'Packaging' with a non-zero duration — see
+    PACKAGING_WORKCENTRE below. Without an operation on the BoM the MO gets
+    no work orders at all, so there is nothing to log time against.
+    """
+    bom_id = rpc.create("mrp.bom", {
         "product_tmpl_id": product_tmpl_of(rpc, finished_id),
         "code": tag("BOM"),
         "product_qty": 1.0,
@@ -183,6 +191,8 @@ def make_bom(rpc, finished_id: int, component_id: int, qty: float = 1.0) -> int:
         "bom_line_ids": [(0, 0, {"product_id": component_id,
                                  "product_qty": qty})],
     })
+    add_packaging_operation(rpc, bom_id)
+    return bom_id
 
 
 def make_sale_order(rpc, product_id: int, qty: float = 1.0) -> tuple[int, str, int]:
@@ -298,6 +308,7 @@ def consume_components(rpc, mo_id: int, qty: float | None = None):
 
 def mark_done(rpc, mo_id: int):
     """Mark as Done, going through the same two hooks the UI does."""
+    log_packaging_work(rpc, mo_id)
     rpc.call("mrp.production", "pre_button_mark_done", [mo_id])
     return rpc.call("mrp.production", "button_mark_done", [mo_id])
 
@@ -316,6 +327,7 @@ def mark_done_with_backorder(rpc, mo_id: int) -> dict:
     Returns whatever ``button_mark_done`` returned, so a caller can assert
     which dialog it was.
     """
+    log_packaging_work(rpc, mo_id)
     action = rpc.call("mrp.production", "button_mark_done", [mo_id])
     if isinstance(action, dict) and action.get("res_model") == "mrp.production.backorder":
         wizard_id = rpc.create("mrp.production.backorder", {
@@ -342,3 +354,106 @@ def backorders_of(rpc, mo_id: int) -> list[dict]:
         "mrp.production",
         [("name", "like", base), ("id", "!=", mo_id)],
         ["name", "state", "product_qty"], order="name")
+
+
+#: dto_mrp_account/models/mrp_production.py:135-137 refuses button_mark_done
+#: unless the order has a work order on a work centre whose NAME is exactly
+#: 'Packaging' carrying a non-zero duration::
+#:
+#:     if sum(order.workorder_ids
+#:            .filtered(lambda wo: wo.workcenter_id.name == 'Packaging')
+#:            .mapped('duration')) == 0:
+#:         raise UserError('You cannot finish a manufacturing order without
+#:                          any work done in Packaging. ...')
+#:
+#: The guard matches on a literal STRING, so renaming or translating the
+#: work centre disables every MO completion on the database. Recorded as a
+#: finding; the fixtures below satisfy it rather than working around it.
+#:
+#: This suite was written while dto_mrp_account was UNINSTALLED (it blocked
+#: 12 Stage-3 cases), so these six cases never met the guard until the
+#: module was deployed with Stage 7.
+PACKAGING_WORKCENTRE = "Packaging"
+
+
+def packaging_workcenter_id(rpc) -> int | None:
+    """An existing work centre named exactly 'Packaging'.
+
+    REUSED, never created. Measured on d1v19: 42 rows carry that exact
+    name, but only ONE is the client's — id 23, created 2024-10-29 and
+    carrying 11,611 work orders. The other 41 were created on 2026-09-18 by
+    WF-008's fixture and carry 0 or 1 work order each. ``order="id"``
+    therefore returns the client's, deterministically, on every run;
+    without it the guard would be satisfied by a different leftover each
+    time.
+    """
+    found = rpc.search("mrp.workcenter",
+                       [("name", "=", PACKAGING_WORKCENTRE),
+                        ("active", "=", True)], limit=1, order="id")
+    return found[0] if found else None
+
+
+def add_packaging_operation(rpc, bom_id: int) -> int | None:
+    """Give a BoM the Packaging operation the completion guard requires."""
+    workcenter = packaging_workcenter_id(rpc)
+    if not workcenter:
+        return None
+    return rpc.create("mrp.routing.workcenter", {
+        "name": tag("Packaging op"),
+        "workcenter_id": workcenter,
+        "bom_id": bom_id,
+        "time_cycle_manual": 1.0,
+    })
+
+
+def log_packaging_work(rpc, mo_id: int, ctx=None) -> bool:
+    """Put a non-zero duration on the MO's Packaging work order.
+
+    Returns False when the order has no such work order, so a caller can
+    block with a precise reason rather than failing on the guard's message.
+    """
+    workorders = rpc.search_read(
+        "mrp.workorder",
+        [("production_id", "=", mo_id)],
+        ["name", "workcenter_id", "duration"])
+    packaging = [w for w in workorders
+                 if (w["workcenter_id"] or [None, ""])[1]
+                 == PACKAGING_WORKCENTRE]
+    if not packaging:
+        return False
+    for workorder in packaging:
+        if not workorder["duration"]:
+            rpc.write("mrp.workorder", [workorder["id"]], {"duration": 15.0})
+    if ctx is not None:
+        ctx.log(f"logged 15 minutes on {len(packaging)} Packaging work "
+                f"order(s) of MO {mo_id} — dto_mrp_account refuses "
+                f"button_mark_done without it")
+    return True
+
+
+def packaging_gate_installed(rpc) -> bool:
+    return bool(rpc.search_read(
+        "ir.module.module",
+        [("name", "=", "dto_mrp_account"), ("state", "=", "installed")],
+        ["id"]))
+
+
+def require_packaging_workcentre(ctx):
+    """BLOCK when the gate is deployed but nothing can satisfy it.
+
+    Silent when dto_mrp_account is absent: with no gate there is nothing to
+    satisfy, and every case that completes an MO ran fine that way for the
+    whole of Stage 3.
+    """
+    rpc = ctx.adapter.rpc
+    if not packaging_gate_installed(rpc):
+        return
+    if packaging_workcenter_id(rpc) is None:
+        ctx.blocked(
+            "no active work centre is named exactly 'Packaging' on "
+            f"{ctx.env.key} (db={ctx.env.db}). "
+            "dto_mrp_account/models/mrp_production.py:135-137 refuses "
+            "button_mark_done unless the order carries a work order on a "
+            "work centre with that literal name and a non-zero duration, so "
+            "no manufacturing order on this database can be completed at "
+            "all until one exists.")

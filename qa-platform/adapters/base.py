@@ -42,7 +42,20 @@ QA_MARKER = "QA-AUTO"  # every record the platform creates carries this marker
 
 
 class OdooRPCError(RuntimeError):
-    pass
+    """An Odoo fault, with the server's exception CLASS preserved.
+
+    The fault's message alone cannot identify the exception: a UserError's
+    message is its user-facing text, but a bare Python exception's message
+    is just its argument — ``KeyError('qty_produced')`` reaches the client
+    as the string ``qty_produced``, indistinguishable from a field value.
+    Odoo does send the class, in the fault's ``data.name``, so it is kept
+    here rather than discarded. `fault_name` is '' when the server did not
+    send one (a transport error, say).
+    """
+
+    def __init__(self, message, fault_name: str = ""):
+        super().__init__(message)
+        self.fault_name = fault_name
 
 
 def _one_line(message) -> str:
@@ -93,7 +106,8 @@ class OdooRPC:
             data = err.get("data") or {}
             message = (data.get("message") or err.get("message")
                        or "unknown RPC error")
-            raise OdooRPCError(_one_line(message))
+            raise OdooRPCError(_one_line(message),
+                               fault_name=data.get("name") or "")
         return reply.get("result")
 
     # -- session ---------------------------------------------------------
@@ -173,9 +187,15 @@ class OdooRPC:
             data = err.get("data") or {}
             message = (data.get("message") or err.get("message")
                        or "unknown RPC error")
+            # Same rule as _rpc above, and this is the path model calls take.
+            # It kept splitlines()[-1] after that one was fixed, so a
+            # multi-line UserError still arrived as its LAST line: an import
+            # whose real message names the offending column reached the test
+            # as "}" — the closing brace of the JSON payload the message
+            # ends with.
             raise OdooRPCError(
-                f"{model}.{method} failed: "
-                f"{str(message).strip().splitlines()[-1]}")
+                f"{model}.{method} failed: {_one_line(message)}",
+                fault_name=data.get("name") or "")
         return reply.get("result")
 
     def search(self, model, domain, **kw):
@@ -231,24 +251,6 @@ class OdooAdapter:
     # (base/models/res_users.py:257). Subclasses set the value; test bodies
     # read it from the adapter so no version branch reaches a suite.
     user_groups_field = "group_ids"
-
-    # Groups a session needs, ON TOP of its business role, before it may
-    # drive an `onchange` on product.product.
-    #
-    # v19 added an access check to the onchange RPC entry point —
-    # `self.check_access('write' if self else 'create')`
-    # (v19 web/models/models.py:2016); v17's implementation has no
-    # check_access at all. And v19 MOVED product write rights: the v17 row
-    # granting stock.group_stock_manager 1,1,1,1 on product.product
-    # (v17 stock/security/ir.model.access.csv:22) was DELETED, leaving
-    # stock read-only (v19 :15) and write/create with
-    # product.group_product_manager alone
-    # (v19 product/security/ir.model.access.csv, access_product_product_manager).
-    #
-    # MUST stay empty on v17: product.group_product_manager does not exist
-    # there, and a session builder that resolves group xml ids would BLOCK
-    # on the unresolvable name.
-    product_write_group_xmlids: list[str] = []
 
     def __init__(self, env: EnvironmentConfig):
         self.env = env

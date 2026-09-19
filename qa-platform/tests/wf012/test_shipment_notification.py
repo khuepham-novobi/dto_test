@@ -59,11 +59,27 @@ from tests.wf012.common import (IRM_RECIPIENT, MARK,  # noqa: F401
                                 SHIPMENT_SERVER_ACTION_XMLID,
                                 SHIPMENT_TEMPLATE_XMLID, WORKFLOW,
                                 WORKFLOW_NAME, confirm_with_stock,
-                                ensure_product, expect_error, fx, m2o_id,
+                                ensure_product, expect_error, fx,
+                                gate_analytic, m2o_id,
                                 outgoing_picking, realtime_category,
                                 require_auto_invoice_stack,
                                 require_cogs_analytics, require_mail_offline,
                                 sweep_wf012, trace, validate_picking)
+
+def _move_label(rpc, label: str) -> dict:
+    """The field that carries a stock move's own description, if any.
+
+    v17 had ``stock.move.name`` (required). v19 REMOVED it — measured:
+    "Invalid field 'name' on model 'stock.move'" — and a move is now
+    described by its product, with ``description_picking`` as the optional
+    override. These two fixture pickings are found through their ``origin``,
+    which still carries the marker, so an unlabelled move costs nothing.
+    """
+    for field in ("name", "description_picking"):
+        if rpc.field_exists("stock.move", field):
+            return {field: label}
+    return {}
+
 
 # The guard the port adds. Its presence in the LIVE code decides which
 # behaviour the empty-memo step must assert.
@@ -278,24 +294,40 @@ def test_tc290(ctx):
                                 for m in found["mails"])
                 if "Reference #" not in body:
                     reference_gaps[order_type] = "the label itself is absent"
-            ctx.log("NOTE: these fixture orders carry no analytic "
-                    "distribution on their lines, so an EMPTY Reference # "
-                    "block is correct here. What is asserted is that the "
-                    "block renders at all; TEST-WF012-TC290's analytic "
-                    "variant below supplies a distribution and asserts the "
-                    "content.")
+            ctx.log("NOTE: what is asserted here is that the block RENDERS, "
+                    "not what it contains. Since Stage 7 the project and buy "
+                    "fixtures carry a gate distribution (dto_account refuses "
+                    "to confirm them without one) while the inventory and "
+                    "cost_center fixtures carry none — dto_account refuses "
+                    "ANY distribution on those two — so the same assertion "
+                    "covers a filled and an empty block. Step 4b below "
+                    "asserts the content.")
             ctx.check("order types whose body has no Reference # block",
                       {}, reference_gaps)
 
         with ctx.step("Step 4b: an order WITH an analytic distribution "
                       "renders '<plan> - <account>' under Reference #"):
-            analytic_id = rpc.ref(
-                "dto_account.analytic_account_spend_category_consumables")
+            # The account must be on the PROJECT plan. Since Stage 7,
+            # dto_account/models/sale_order.py:89 raises 'Project is
+            # required' when ANY account on a project order's line sits on
+            # another plan, so the Spend Category account this step used
+            # before can no longer reach a confirmed order at all. What is
+            # asserted — that the account renders as '<plan> - <account>'
+            # under Reference # — is unchanged.
+            distribution = gate_analytic(ctx, "project",
+                                         label=f"{MARK} WF012")
+            if not distribution:
+                ctx.blocked(
+                    "dto_account's Project analytic plan does not resolve on "
+                    f"{ctx.env.key}, so no distribution can be built for a "
+                    "project order and the Reference # content cannot be "
+                    "asserted.")
+            analytic_id = int(next(iter(distribution)))
             product_id = ensure_product(ctx, label="P290-analytic",
                                         categ_id=categ_id)
             order_id, _ = confirm_with_stock(
                 ctx, order_type="project", product_id=product_id,
-                label="TC290-analytic", analytic={str(analytic_id): 100})
+                label="TC290-analytic", analytic=distribution)
             picking = outgoing_picking(ctx, order_id)
             validate_picking(ctx, picking["id"])
             order_name = rpc.read("sale.order", [order_id],
@@ -386,7 +418,7 @@ def test_tc290(ctx):
                 "location_dest_id": m2o_id(
                     type_row["default_location_dest_id"]),
                 "move_ids": [(0, 0, {
-                    "name": fx(f"{MARK} in"),
+                    **_move_label(rpc, fx(f"{MARK} in")),
                     "product_id": product_id,
                     "product_uom_qty": 1.0,
                     "location_id": m2o_id(type_row["default_location_src_id"]),
@@ -414,7 +446,7 @@ def test_tc290(ctx):
                 "location_id": src,
                 "location_dest_id": dest,
                 "move_ids": [(0, 0, {
-                    "name": fx(f"{MARK} out"),
+                    **_move_label(rpc, fx(f"{MARK} out")),
                     "product_id": product_id,
                     "product_uom_qty": 1.0,
                     "location_id": src,

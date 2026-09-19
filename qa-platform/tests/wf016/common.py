@@ -440,8 +440,7 @@ def attach_to_move(rpc, move_id, via="attachment", name=None):
     payload = base64.b64encode(b"%PDF-1.4 QA fixture").decode()
     if via == "move":
         return rpc.write("account.move", [move_id], {
-            "attachment_ids": [(0, 0, {"name": name, "datas": payload,
-                                       "res_model": "account.move"})]})
+            "attachment_ids": [(0, 0, {"name": name, "datas": payload})]})
     return rpc.create("ir.attachment", {
         "name": name, "datas": payload,
         "res_model": "account.move", "res_id": move_id})

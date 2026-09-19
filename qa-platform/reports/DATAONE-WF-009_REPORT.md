@@ -1,6 +1,6 @@
 # DATAONE-WF-009 Report — Component Shortage Auto-Substitution
 
-Generated 2026-09-10 06:14 by `scripts/gen_reports.py` from persisted execution results (`data/results.db`) and the workbook-synced registry. Expected results are the workbook's, verbatim.
+Generated 2026-09-18 17:41 by `scripts/gen_reports.py` from persisted execution results (`data/results.db`) and the workbook-synced registry. Expected results are the workbook's, verbatim.
 
 ## Counts
 
@@ -40,4 +40,4 @@ Generated 2026-09-10 06:14 by `scripts/gen_reports.py` from persisted execution 
 ## Failure notes (triage input)
 
 - **DATAONE-TC137** [Odoo 19 → FAIL / ASSERTION] ValidationError says 'A product cannot be a replacement of itself.': expected True, got 'no error raised'
-- **DATAONE-TC139** [Odoo 19 → FAIL / ASSERTION] still on A: expected 38463, got 38464
+- **DATAONE-TC139** [Odoo 19 → FAIL / ASSERTION] still on A: expected 39107, got 39108

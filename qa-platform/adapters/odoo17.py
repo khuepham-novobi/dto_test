@@ -59,13 +59,6 @@ class Odoo17Adapter(OdooAdapter):
     # res.users.groups_id (base/models/res_users.py:384).
     user_groups_field = "groups_id"
 
-    # EMPTY on purpose. v17's onchange endpoint performs no access check
-    # (web/models/models.py has no check_access), and stock.group_stock_manager
-    # already holds write on product.product (stock/security/
-    # ir.model.access.csv:22), so no extra group is needed — and
-    # product.group_product_manager does not exist on v17 to grant.
-    product_write_group_xmlids: list[str] = []
-
     @property
     def ui(self) -> dict:
         return {

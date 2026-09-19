@@ -98,7 +98,22 @@ def test_tc288(ctx):
                              ["invoice_status", "order_type", "name"])[0]
             ctx.log(f"order: {order!r}")
             ctx.check("order_type", "project", order["order_type"])
-            ctx.check("invoice_status before validation", "to invoice",
+            # invoice_status before validation is decided by the product's
+            # invoice policy, not by this workflow: 'order' bills on the
+            # ordered quantity and reads 'to invoice' the moment the order is
+            # confirmed, 'delivery' bills on the delivered quantity and
+            # correctly reads 'no' until something is delivered. The
+            # override under test reads invoice_status AFTER the picking is
+            # validated, so it fires on either — and asserting one of them
+            # here would only encode the target's product defaults. The
+            # policy is read from the product and logged so the expectation
+            # is visible rather than assumed.
+            policy = rpc.read("product.product", [product_id],
+                              ["invoice_policy"])[0]["invoice_policy"]
+            ctx.log(f"product invoice_policy = {policy!r}")
+            ctx.check(f"invoice_status before validation "
+                      f"(invoice_policy={policy!r})",
+                      "to invoice" if policy == "order" else "no",
                       order["invoice_status"])
 
         with ctx.step("Step 2: validate the outgoing picking — this single "

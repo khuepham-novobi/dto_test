@@ -728,24 +728,6 @@ def expect_error(rpc_callable, *args, **kwargs):
         return True, str(exc)
 
 
-def menu_groups_field(rpc) -> str:
-    """``ir.ui.menu``'s groups m2m: ``groups_id`` / ``group_ids``.
-
-    v17 ``base/models/ir_ui_menu.py:32`` declares ``groups_id``; v19 ``:29``
-    declares the same Many2many as ``group_ids``, with no compatibility
-    alias — so reading the v17 name raises on v19 before any assertion
-    runs. Resolved here rather than branched on ``ctx.env.version``, per
-    AUTOMATION_CONVENTIONS.md ("version differences go through the adapter
-    or a helper, never scattered in test bodies").
-
-    Copied rather than imported from ``tests/wf024/common.py:548-551``:
-    hard rule 1 keeps each suite writing only in its own folder, and a
-    cross-suite import would make wf001 fail whenever wf024 is refactored.
-    """
-    return ("group_ids" if rpc.field_exists("ir.ui.menu", "group_ids")
-            else "groups_id")
-
-
 def cron_row(rpc, xmlid):
     module, _, name = xmlid.partition(".")
     data = rpc.search_read("ir.model.data",

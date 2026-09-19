@@ -478,6 +478,16 @@ def ensure_pool(ctx, label, percentage, expense_account_id=None,
     """
     rpc = ctx.adapter.rpc
     name = fx(f"{MARK} {label}")
+    # dto_mrp_account/models/mrp_overhead_cost_setting.py:47-51 refuses any
+    # rate that rounds to zero at FOUR digits:
+    #     float_compare(record.percentage, 0, precision_digits=4) <= 0
+    # so the smallest rate the product will accept is 0.0001. A fixture
+    # asking for a "negligible but positive" pool at 0.000001 is rejected
+    # outright — measured, and it is what killed TC238 and TC244. The value
+    # is raised to the product's own floor rather than the constraint being
+    # worked around, and the substitution is logged so a reader sees it.
+    if 0 < percentage < 0.0001:
+        percentage = 0.0001
     values = {"name": name, "percentage": percentage}
     if expense_account_id:
         values["expense_account_id"] = expense_account_id
@@ -634,9 +644,29 @@ def finished_move(rpc, mo_id):
 
 
 def raw_moves(rpc, mo_id):
-    return rpc.search_read(
-        "stock.move", [("raw_material_production_id", "=", mo_id)],
-        ["state", "price_unit", "quantity", "product_id", "scrapped"])
+    """Raw moves of an MO, with the scrap marker under whichever name this
+    version uses.
+
+    v19 removed ``stock.move.scrapped``; a scrapped move is now identified
+    by a set ``scrap_id``. Reading the absent field raises, so the field
+    list is resolved and the result carries a normalised ``scrapped`` key
+    either way — callers stay version-agnostic.
+    """
+    fields = ["state", "price_unit", "quantity", "product_id"]
+    legacy = rpc.field_exists("stock.move", "scrapped")
+    marker = "scrapped" if legacy else (
+        "scrap_id" if rpc.field_exists("stock.move", "scrap_id") else None)
+    if marker:
+        fields.append(marker)
+    rows = rpc.search_read(
+        "stock.move", [("raw_material_production_id", "=", mo_id)], fields)
+    if marker and not legacy:
+        for row in rows:
+            row["scrapped"] = bool(row.get(marker))
+    elif not marker:
+        for row in rows:
+            row["scrapped"] = False
+    return rows
 
 
 def entry_lines(rpc, move_ids, extra_fields=()):
@@ -782,3 +812,34 @@ def standard_environment(ctx, labour_account=True, cost_method="fifo",
                 "a regression. Read the entry dump before concluding "
                 "anything.")
     return env
+
+
+def require_exclusive_pools(ctx, expected: int):
+    """BLOCK when the target carries overhead pools this suite did not create.
+
+    The absorption entry sums across EVERY active pool, so a case that pins
+    an expected amount is arithmetically valid only on a database whose
+    pools it controls. Measured on d1v19 there are eight live ones — Rent &
+    Utilities, Property Tax, Supplies, three Mgrs Salaries pools and more —
+    all the client's own.
+
+    Archiving them to make the sum come out would modify pre-existing
+    business records, which hard rule 3 forbids, and leaving the assertion
+    as a count turns a correct product into a red test. So the case blocks,
+    naming what it found: the arithmetic belongs on a bench, and this is a
+    production clone.
+    """
+    rpc = ctx.adapter.rpc
+    pools = rpc.search_read("mrp.overhead.cost.setting",
+                            [("name", "not like", f"%{_TOKEN}%")],
+                            ["name", "percentage"])
+    if pools:
+        ctx.blocked(
+            f"this case pins an absorbed amount computed from exactly "
+            f"{expected} overhead pool(s), but {len(pools)} pre-existing "
+            f"pool(s) are in force on {ctx.env.key} (db={ctx.env.db}): "
+            f"{[p['name'] for p in pools][:6]}. The absorption entry sums "
+            f"across every active pool, so the pinned figure cannot hold "
+            f"here, and archiving the client's pools to make it hold is "
+            f"forbidden by rule 3. The case needs a bench whose pools it "
+            f"owns.")

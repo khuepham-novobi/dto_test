@@ -75,16 +75,43 @@ crash in a previous run is self-healing. The *template* is never
 substituted — the whole point of TC317 is the shipped 20-row contract, so
 ``dto_account_workday.template_export_workday_vendor_bill`` is used as-is.
 
-The attachment route matters
-----------------------------
+The attachment route matters — and on v19 it is the OTHER way round
+-------------------------------------------------------------------
 ``have_attachment`` is ``store=True`` with ``@api.depends('attachment_ids')``
 (``dto_account/models/account_move.py:14-31``) over a domain-filtered
-One2many. Creating an ``ir.attachment`` pointing AT the move does not
-reliably invalidate it — that is TC319's whole subject, and ``dto_account``
-carries its own test recording the same defect (E3,
-``tests/test_wf016_vendor_bill.py:126-159``). Fixtures that need to POST a
-bill therefore attach via ``attachment_ids`` on the move
-(``attach_to_move(..., via="move")``); TC319 uses both routes deliberately.
+One2many. TC319's subject is that the two attachment routes disagree.
+
+This section used to say fixtures should attach via ``attachment_ids`` on
+the move, because creating the ``ir.attachment`` directly "does not reliably
+invalidate" the stored compute. **Measured on d1v19 (Odoo 19), that is
+inverted**, and the move route does not merely fail to invalidate — it
+writes nothing at all::
+
+    move.write({'attachment_ids': [(0, 0, {...})]})
+        -> attachment_ids == []      have_attachment == False
+        -> the ir.attachment cannot be found by name either
+    ir.attachment.create({..., 'res_model': 'account.move',
+                          'res_id': move})
+        -> attachment_ids == [id]    have_attachment == True
+
+The cause is in core's own definition (v19
+``addons/account/models/account_move.py:334``)::
+
+    attachment_ids = fields.One2many(
+        'ir.attachment', 'res_id',
+        domain=[('res_model', '=', 'account.move')])
+
+The inverse is ``res_id``; ``res_model`` is only a domain term, so the ORM
+never fills it and the new row falls outside the very domain it was created
+through. Because ``dto_account._post`` refuses an ``in_invoice`` whose
+``have_attachment`` is False, every fixture bill in WF-017/018/019 failed to
+post — 19 cases reported "The Vendor Bill requires an attachment before
+posting" and never reached the behaviour they test.
+
+Fixtures therefore call ``ensure_postable_bill`` (``framework/qa_fixtures``),
+which attaches the working way and then PROVES ``have_attachment`` before
+anything depends on it. ``attach_to_move`` keeps both named routes, because
+exercising both is exactly what TC319 is for.
 
 EXPECTED v17/v19 OUTCOME is stated per test in each module's docstring.
 """
@@ -96,7 +123,9 @@ import uuid
 
 from adapters.base import OdooRPCError
 from framework.fg_common import form_arch, list_tag, m2o_id, make_trace  # noqa: F401
-from framework.qa_fixtures import sweep_model, sweep_products, with_categ  # noqa: F401
+from framework.qa_fixtures import (ensure_postable_bill,  # noqa: F401
+                                   sweep_model, sweep_products,
+                                   with_categ)
 
 WORKFLOW = "DATAONE-WF-018"
 WORKFLOW_NAME = "Vendor Bill Export to Workday"
@@ -579,8 +608,7 @@ def attach_to_move(rpc, move_id, via="move", name=None):
             "name": name, "datas": payload,
             "res_model": "account.move", "res_id": move_id})
     return rpc.write("account.move", [move_id], {
-        "attachment_ids": [(0, 0, {"name": name, "datas": payload,
-                                   "res_model": "account.move"})]})
+        "attachment_ids": [(0, 0, {"name": name, "datas": payload})]})
 
 
 def make_bill(ctx, vendor_id, lines, ref_suffix, label="bill",
@@ -623,7 +651,13 @@ def make_bill(ctx, vendor_id, lines, ref_suffix, label="bill",
     move_id = rpc.create("account.move", move_values)
 
     if attach:
-        attach_to_move(rpc, move_id, via="move")
+        # via='move' is kept for TC319, which exists to record how the two
+        # routes disagree — but it cannot be what a fixture relies on. On
+        # d1v19 (Odoo 19) that route produces no attachment row at all, so
+        # have_attachment stays False and dto_account refuses to post the
+        # bill. ensure_postable_bill attaches the way that works and then
+        # PROVES the gate is satisfied before anything depends on it.
+        ensure_postable_bill(ctx, move_id, name=fx(f"{MARK} supplier.pdf"))
     if post and attach:
         rpc.call("account.move", "action_post", [move_id])
         state = rpc.read("account.move", [move_id], ["state"])[0]["state"]

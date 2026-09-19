@@ -57,13 +57,6 @@ class Odoo19Adapter(OdooAdapter):
     # raises ValueError: Invalid field 'groups_id' in 'res.users'.
     user_groups_field = "group_ids"
 
-    # v19 gates the onchange RPC on write/create access
-    # (web/models/models.py:2016) and stock.group_stock_manager no longer
-    # carries write on product.product — that row was deleted, and
-    # product.group_product_manager holds it instead
-    # (product/security/ir.model.access.csv, access_product_product_manager).
-    product_write_group_xmlids: list[str] = ["product.group_product_manager"]
-
     @property
     def ui(self) -> dict:
         return {

@@ -62,6 +62,7 @@ guard BUILDS the command list before deleting it, so the SILENT failure
 mode is a command list whose shape changed and a diff text that comes out
 empty. Step 9's "the body itemises every change" is what catches that.
 """
+from framework.dto_fixtures import gate_analytic
 from framework.registry import test_case
 from tests.wf001.common import (ACTIVITY_TYPE_XMLID,  # noqa: F401
                                 CONFIRMED_ACTIVITY_SUMMARY, MARK, WORKFLOW,
@@ -110,17 +111,6 @@ def test_tc339(ctx):
         uom_name = any_uom(ctx)
         state_row, country_row = state_and_country(ctx)
         label = sorted(labels)[0]
-        # dto_account's Gate 2 is order-type dependent
-        # (dto_account/models/sale_order.py:84-112): a 'project' order MUST
-        # carry a Project-plan account, a 'buy' order MUST carry a
-        # Customer-Contract one, and 'inventory'/'cost_center' must carry
-        # NEITHER. The fixture therefore has to know which key it drew, or
-        # action_confirm refuses with 'Project is required' /
-        # 'Customer Contract is required' before this case's subject — a
-        # CONFIRMED order — can exist at all.
-        order_type_key = labels[label]
-        ctx.log(f"order type for this fixture: {label!r} -> "
-                f"{order_type_key!r}")
 
     company_id = m2o_id(rpc.read("res.users", [rpc.uid],
                                  ["company_id"])[0]["company_id"])
@@ -149,10 +139,8 @@ def test_tc339(ctx):
                           order_type_label=label,
                           requisition_num=memo("REQ-C"),
                           internal_memo=memo("IM-C"),
-                          project=(analytic_name("PRJ-C")
-                                   if order_type_key == "project" else ""),
-                          contract=(analytic_name("CC-C")
-                                    if order_type_key == "buy" else ""))
+                          project=analytic_name("PRJ-C"),
+                          contract=analytic_name("CC-C"))
             first = [
                 row(item=item_a, description=fx(f"{MARK} A"), quantity="2",
                     unit_price="10.0", **common),
@@ -179,6 +167,26 @@ def test_tc339(ctx):
                           {"requested_delivery_date": "2099-12-31"})
                 ctx.log("promised ship date filled on all three lines "
                         "(dto_sale Gate 3)")
+            # Gate 4, deployed with Stage 7: dto_account/models/sale_order.py:79
+            # refuses a 'project' order whose lines resolve to no account on
+            # the Project plan, and a 'buy' order without one on the Customer
+            # Contract plan. The Workday import writes the Project and
+            # Customer Contract COLUMNS carried above but does not turn them
+            # into an analytic_distribution, so the imported order cannot
+            # confirm. TC339's subject is what a confirmed order refuses
+            # afterwards, so the gate is satisfied here — the same step a
+            # salesperson performs — and logged rather than fought.
+            order_type = rpc.read("sale.order", [so_c], ["order_type"])[0].get(
+                "order_type")
+            distribution = gate_analytic(ctx, order_type,
+                                         label=f"{MARK} WF001")
+            if distribution:
+                rpc.write("sale.order.line",
+                          [line["id"] for line in lines],
+                          {"analytic_distribution": distribution})
+                ctx.log(f"analytic distribution {distribution!r} set on all "
+                        f"three lines for order_type={order_type!r} "
+                        f"(dto_account Gate 4)")
             rpc.call("sale.order", "action_confirm", [so_c])
             state = rpc.read("sale.order", [so_c], ["state", "name"])[0]
             ctx.log(f"SO-C after confirmation: {state!r}")
@@ -239,10 +247,8 @@ def test_tc339(ctx):
                           requisition_num=memo("REQ-C"),
                           internal_memo=so_c_name,
                           supplier_memo=fx(f"{MARK} UPDATED MEMO"),
-                          project=(analytic_name("PRJ-C")
-                                   if order_type_key == "project" else ""),
-                          contract=(analytic_name("CC-C")
-                                    if order_type_key == "buy" else ""))
+                          project=analytic_name("PRJ-C"),
+                          contract=analytic_name("CC-C"))
             second = [
                 # ITEM-A: quantity changed 2 -> 7
                 row(item=item_a, description=fx(f"{MARK} A"), quantity="7",
@@ -347,12 +353,17 @@ def test_tc339(ctx):
             ctx.check_true(
                 "and the price change 20 -> 55 appears too",
                 "55" in note and "20" in note, actual_desc=note)
+            # The activity body renders each tracked line by its PRODUCT,
+            # not by the line description — measured, and the reason
+            # _ensure_known_product now names products after their item
+            # code. So the added and removed items are looked for by the
+            # code they were imported under.
             ctx.check_true(
                 "the added products are named as creates",
-                fx(f"{MARK} D") in note or fx(f"{MARK} E") in note,
+                item_code("ITEM-D") in note or item_code("ITEM-E") in note,
                 actual_desc=note)
             ctx.check_true("and the removed product as a delete",
-                           fx(f"{MARK} C") in note, actual_desc=note)
+                           item_code("ITEM-C") in note, actual_desc=note)
 
         with ctx.step("Steps 12-13: nothing downstream moved and NO "
                       "revision was created — the revision path is for "
