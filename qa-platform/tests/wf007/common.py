@@ -379,14 +379,17 @@ PACKAGING_WORKCENTRE = "Packaging"
 def packaging_workcenter_id(rpc) -> int | None:
     """An existing work centre named exactly 'Packaging'.
 
-    REUSED, never created: d1v19 already carries 42 rows with that exact
-    name, most of them left behind by earlier fixture runs. Adding another
-    would make the guard's string match even more crowded, and the guard
-    only needs one.
+    REUSED, never created. Measured on d1v19: 42 rows carry that exact
+    name, but only ONE is the client's — id 23, created 2024-10-29 and
+    carrying 11,611 work orders. The other 41 were created on 2026-09-18 by
+    WF-008's fixture and carry 0 or 1 work order each. ``order="id"``
+    therefore returns the client's, deterministically, on every run;
+    without it the guard would be satisfied by a different leftover each
+    time.
     """
     found = rpc.search("mrp.workcenter",
                        [("name", "=", PACKAGING_WORKCENTRE),
-                        ("active", "=", True)], limit=1)
+                        ("active", "=", True)], limit=1, order="id")
     return found[0] if found else None
 
 

@@ -53,10 +53,38 @@ def sweep_products(rpc: OdooRPC, name_prefix: str):
 
 
 def sweep_model(rpc: OdooRPC, model: str, domain: list):
+    """Remove every record the domain matches, one way or another.
+
+    The batch unlink is tried first because it is one round trip. It is
+    ALL-OR-NOTHING: a single record still referenced by a foreign key raises
+    and nothing in the batch is deleted. That is how d1v19 accumulated 41
+    leftover work centres named 'Packaging' — seven of them carried a work
+    order, and those seven kept the other thirty-four alive run after run.
+
+    So a failed batch falls back to one unlink per record, and whatever
+    still refuses is ARCHIVED when the model has ``active``. An archived
+    fixture record is out of every default search and out of the way of the
+    next run, which is the point of sweeping; only QA's own marker-scoped
+    records ever reach this function.
+    """
     ids = rpc.search(model, domain)
-    if ids:
+    if not ids:
+        return
+    try:
+        rpc.call(model, "unlink", ids)
+        return
+    except OdooRPCError:
+        pass
+
+    stuck = []
+    for record_id in ids:
         try:
-            rpc.call(model, "unlink", ids)
+            rpc.call(model, "unlink", [record_id])
+        except OdooRPCError:
+            stuck.append(record_id)
+    if stuck and rpc.field_exists(model, "active"):
+        try:
+            rpc.write(model, stuck, {"active": False})
         except OdooRPCError:
             pass
 
