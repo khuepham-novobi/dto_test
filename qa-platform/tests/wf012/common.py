@@ -170,6 +170,14 @@ def sweep_wf012(rpc):
                 pass
 
     sweep_products(rpc, MARK)
+    # make_sale_order now satisfies dto_account's Gate 2 through
+    # gate_analytic(label=f"{MARK} WF012"), which CREATES analytic accounts
+    # carrying MARK. No other suite sweeps them for wf012, so without this
+    # every run leaks two of them. Nine sibling suites sweep the same model
+    # for the same reason.
+    sweep_model(rpc, "account.analytic.account",
+                [("name", "like", f"{MARK} %"),
+                 ("active", "in", [True, False])])
     sweep_model(rpc, "res.partner", [("name", "like", f"{MARK} %"),
                                      ("user_ids", "=", False),
                                      ("active", "in", [True, False])])

@@ -92,6 +92,29 @@ def _credit_note(ctx, vendor_id, product_id, label="cn"):
                           move_type="in_refund", label=label)
 
 
+def _narration_for(ctx, vendor_id, label):
+    """The narration dto_account computes for a vendor, read off a RECORD.
+
+    ``get_default_narration(self, partner, company=None)`` takes
+    RECORDSETS — it does ``partner.lang`` and
+    ``company.with_context(lang=lang)`` (dto_account/models/
+    account_move.py:44-48). Over ``/web/dataset/call_kw`` only ``args[0]``
+    is browsed into a recordset; every later positional arrives raw, so
+    passing ids raises ``'int' object has no attribute 'lang'`` before the
+    method does anything.
+
+    ``_compute_narration`` (:20-26) runs the IDENTICAL call with real
+    recordsets whenever an ``in_refund`` is created, so creating one and
+    reading ``narration`` back observes exactly the same code path — and
+    it is what the workbook's steps describe anyway ("a vendor on the
+    default language gets the default-language text").
+    """
+    rpc = ctx.adapter.rpc
+    note_id = _credit_note(ctx, vendor_id, ensure_product(ctx), label)
+    return rpc.read("account.move", [note_id],
+                    ["narration"])[0]["narration"] or ""
+
+
 @test_case(
     id="TEST-WF016-TC275",
     name="A vendor credit note's narration equals the company RMA terms",
@@ -380,8 +403,7 @@ def test_tc277(ctx):
                       "default-language text"):
             vendor_id = ensure_vendor(rpc, label="Vendor Gamma")
             rpc.write("res.partner", [vendor_id], {"lang": user_lang})
-            default_text = rpc.call("account.move", "get_default_narration",
-                                    [], vendor_id, comp_id)
+            default_text = _narration_for(ctx, vendor_id, "TC277-default")
             ctx.log(f"default-language narration length: "
                     f"{len(default_text or '')}")
             ctx.check("default-language narration == the company setting",
@@ -400,9 +422,7 @@ def test_tc277(ctx):
                 alt_vendor = ensure_vendor(rpc, label="Vendor Intl",
                                            lang=alt_code)
                 rpc.write("res.partner", [alt_vendor], {"lang": alt_code})
-                alt_text = rpc.call("account.move",
-                                    "get_default_narration", [],
-                                    alt_vendor, comp_id)
+                alt_text = _narration_for(ctx, alt_vendor, "TC277-alt")
                 ctx.log(f"{alt_code} narration length: "
                         f"{len(alt_text or '')}")
                 ctx.check_true(
@@ -419,8 +439,7 @@ def test_tc277(ctx):
                       "env.user.lang — the default-language text"):
             nolang = ensure_vendor(rpc, label="Vendor NoLang")
             rpc.write("res.partner", [nolang], {"lang": False})
-            fallback = rpc.call("account.move", "get_default_narration",
-                                [], nolang, comp_id)
+            fallback = _narration_for(ctx, nolang, "TC277-nolang")
             ctx.log(f"no-lang narration length: {len(fallback or '')}")
             ctx.check("no-lang partner falls back to the user's language",
                       default_text, fallback)
@@ -429,19 +448,26 @@ def test_tc277(ctx):
                       "empty string, not the markup"):
             rpc.write("res.company", [comp_id],
                       {NARRATION_FIELD: "<p><br></p>"})
-            empty = rpc.call("account.move", "get_default_narration", [],
-                             vendor_id, comp_id)
-            ctx.log(f"narration for an HTML-empty company value: {empty!r}")
-            ctx.check("narration for an HTML-empty company value", "",
-                      empty or "")
+            # ONE observation, not two. get_default_narration cannot be
+            # called over RPC at all (it takes recordsets — see
+            # _narration_for), so the record read below IS the only
+            # surface on which this property is observable; adding a
+            # second _narration_for read here would assert the same call
+            # twice and could not fail independently. The workbook's
+            # property — "'' , the empty string, not the markup" — is
+            # carried by this assertion.
             note_id = _credit_note(ctx, vendor_id,
                                    ensure_product(ctx), "TC277-empty")
             note_narration = rpc.read("account.move", [note_id],
                                       ["narration"])[0]["narration"]
-            ctx.log(f"credit note narration in that state: "
+            ctx.log(f"narration for an HTML-empty company value: "
                     f"{note_narration!r}")
+            ctx.check(
+                "narration for an HTML-empty company value is '' — the "
+                "empty string, not the markup",
+                "", (note_narration or "").strip())
             ctx.check_true(
-                "the credit note carries no markup either",
+                "and it carries no markup either",
                 not _strip_html(note_narration),
                 actual_desc=repr(note_narration))
     finally:
@@ -497,15 +523,30 @@ def test_tc278(ctx):
                   "on delta §3.5's rotted list — t-field was largely "
                   "replaced by t-out and report_invoice_document was "
                   "restructured across v18/19"):
+        # The old probe searched ir.ui.view on ('model','=','account.move')
+        # — but a QWeb template NEVER carries `model`. It is a plain Char
+        # (v19 base/models/ir_ui_view.py:146) and <template> conversion
+        # writes only name/key/type/inherit_id/priority, so that domain
+        # returns nothing on ANY target and the assertion could never pass.
+        # Query the real relation instead: inherit_id pointing at the
+        # report this module extends.
+        anchor_id = rpc.ref("account.report_invoice_document")
+        if not anchor_id:
+            ctx.blocked(
+                "account.report_invoice_document does not resolve on "
+                f"{ctx.env.key}; there is no template for dto_account to "
+                "inherit, so there is nothing to assert about the RMA "
+                "block.")
         inherits = rpc.search_read(
             "ir.ui.view",
-            [("model", "=", "account.move"),
-             ("type", "=", "qweb")],
-            ["name", "key"], limit=80)
+            [("type", "=", "qweb"), ("inherit_id", "=", anchor_id)],
+            ["name", "key", "active"])
         dto_inherits = [v for v in inherits
                         if "dto" in (v.get("key") or "").lower()
                         or "dto" in (v.get("name") or "").lower()]
-        ctx.log(f"DataOne QWeb inherits on account.move: {dto_inherits!r}")
+        ctx.log(f"QWeb inherits of account.report_invoice_document: "
+                f"{inherits!r}")
+        ctx.log(f"of those, DataOne's: {dto_inherits!r}")
         ctx.check_true(
             "at least one DataOne QWeb inherit of the invoice report "
             "exists — if the anchor rotted at install, there would be none",
