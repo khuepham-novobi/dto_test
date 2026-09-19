@@ -34,8 +34,16 @@ def m2o_id(value):
     return value[0] if isinstance(value, (list, tuple)) else (value or None)
 
 
-def form_arch(ctx, model, view_type="form"):
+def form_arch(ctx, model, view_type="form", xmlid=None):
     """Version-agnostic view arch fetch.
+
+    ``xmlid`` names the view to read. WITHOUT it, get_view returns the
+    model's DEFAULT view of that type, which for account.move's list is the
+    generic account.view_invoice_tree (string="Invoices") — NOT the
+    vendor-bill list account.view_in_invoice_bill_tree that dto_account
+    actually extends. Asserting on the default therefore reports a missing
+    column that is present in the view a user really opens. Pass the xmlid
+    whenever the assertion is about a view some module inherited.
 
     Both v17 and v19 expose get_view(view_id, view_type)
     (base/models/ir_ui_view.py:2613 on v17, :3138 on v19). What differs is
@@ -47,7 +55,16 @@ def form_arch(ctx, model, view_type="form"):
     """
     if view_type in ("tree", "list"):
         view_type = getattr(ctx.adapter, "list_view_type", view_type)
-    return ctx.adapter.rpc.call(model, "get_view", view_type=view_type)["arch"]
+    kwargs = {"view_type": view_type}
+    if xmlid:
+        view_id = ctx.adapter.rpc.ref(xmlid)
+        if not view_id:
+            ctx.blocked(
+                f"The view {xmlid} does not resolve on {ctx.env.key} "
+                f"(db={ctx.env.db}), so the arch this case asserts on "
+                "cannot be read.")
+        kwargs["view_id"] = view_id
+    return ctx.adapter.rpc.call(model, "get_view", **kwargs)["arch"]
 
 
 def list_tag(ctx) -> str:

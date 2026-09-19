@@ -80,13 +80,22 @@ def _posted_unpaid_bill(ctx):
     return bill_id, row
 
 
-def _view_arch(rpc, xmlid, model):
+def _view_arch(rpc, xmlid, model, ref_rpc=None):
     """The arch of one named view, or None when the view does not exist.
 
     ``get_view`` is public on both versions (v17
     base/models/ir_ui_view.py:2613, v19 :3138) and takes a view id.
+
+    ``ref_rpc`` resolves the xmlid and defaults to ``rpc``. The negatives
+    below read views AS a non-manager, and a plain internal user may not
+    read ir.model.data — "This operation is allowed for the following
+    groups: Access Rights". Resolving the xmlid through that user therefore
+    raises before any view is read, which is an artefact of HOW the view is
+    named, not the access question under test. The id is resolved once as
+    admin; the ARCH is still fetched as the restricted user, which is what
+    the case is about.
     """
-    view_id = rpc.ref(xmlid)
+    view_id = (ref_rpc or rpc).ref(xmlid)
     if not view_id:
         return None
     try:
@@ -158,9 +167,10 @@ def test_tc267(ctx):
             for suffix in ("invoicing", "purchase", "sales"):
                 _, login, user_rpc = users[suffix]
                 for xmlid, _view_type in views:
-                    arch = _view_arch(user_rpc, xmlid, "account.move") \
-                        if "move_line" not in xmlid else \
-                        _view_arch(user_rpc, xmlid, "account.move.line")
+                    model = ("account.move.line"
+                             if "move_line" in xmlid else "account.move")
+                    arch = _view_arch(user_rpc, xmlid, model,
+                                      ref_rpc=rpc)
                     if arch is None:
                         ctx.log(f"[note] {xmlid} does not exist on "
                                 f"{ctx.env.key} — expected on v19 for the "
@@ -180,7 +190,7 @@ def test_tc267(ctx):
             for xmlid, _view_type in views:
                 model = ("account.move.line" if "move_line" in xmlid
                          else "account.move")
-                arch = _view_arch(mgr_rpc, xmlid, model)
+                arch = _view_arch(mgr_rpc, xmlid, model, ref_rpc=rpc)
                 if arch is None:
                     continue
                 seen[xmlid] = "action_register_payment" in arch
@@ -197,7 +207,7 @@ def test_tc267(ctx):
                           "would cause"):
                 _, _, inv_rpc = users["invoicing"]
                 arch = _view_arch(inv_rpc, "account.view_move_form",
-                                  "account.move") or ""
+                                  "account.move", ref_rpc=rpc) or ""
                 still_visible = [b for b in REGISTER_PAYMENT_BUTTON_IDS
                                  if b in arch]
                 ctx.log(f"buttons still in a Billing user's arch: "

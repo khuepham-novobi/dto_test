@@ -600,6 +600,17 @@ def attach_to_move(rpc, move_id, via="move", name=None):
     ``via='attachment'`` creates the ``ir.attachment`` pointing AT the
     move — the chatter route, whose invalidation is the defect TC319 is
     about. Never use it for a fixture that must post.
+
+    ``res_model`` is set explicitly on the One2many payload. It is not
+    optional: ``account.move.attachment_ids`` is
+    One2many('ir.attachment', 'res_id', domain=[('res_model','=','account.move')]),
+    so the inverse Odoo writes is ``res_id`` ALONE. Without ``res_model``
+    the new attachment falls outside the field's own domain,
+    ``attachment_ids`` reads back EMPTY, the stored ``have_attachment``
+    compute stays False and the bill is refused with "The Vendor Bill
+    requires an attachment before posting" — which reads exactly like a
+    product defect and is not one. dto_account's own test records the same
+    trap (tests/test_wf016_vendor_bill.py:70-85, "learned the hard way").
     """
     name = name or fx(f"{MARK} supplier.pdf")
     payload = base64.b64encode(b"%PDF-1.4 WF018 QA fixture").decode()
@@ -608,7 +619,8 @@ def attach_to_move(rpc, move_id, via="move", name=None):
             "name": name, "datas": payload,
             "res_model": "account.move", "res_id": move_id})
     return rpc.write("account.move", [move_id], {
-        "attachment_ids": [(0, 0, {"name": name, "datas": payload})]})
+        "attachment_ids": [(0, 0, {"name": name, "datas": payload,
+                                   "res_model": "account.move"})]})
 
 
 def make_bill(ctx, vendor_id, lines, ref_suffix, label="bill",

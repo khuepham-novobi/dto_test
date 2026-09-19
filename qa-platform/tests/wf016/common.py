@@ -398,12 +398,24 @@ def attach_to_move(rpc, move_id, via="attachment", name=None):
     unreliable. ``via='move'`` writes ``attachment_ids`` on the move, the
     path expected to invalidate reliably. The difference between the two is
     the whole of TC264 step 9.
+
+    ``res_model`` is set explicitly on the One2many payload. It is not
+    optional: ``account.move.attachment_ids`` is
+    One2many('ir.attachment', 'res_id', domain=[('res_model','=','account.move')]),
+    so the inverse Odoo writes is ``res_id`` ALONE. Without ``res_model``
+    the new attachment falls outside the field's own domain,
+    ``attachment_ids`` reads back EMPTY, the stored ``have_attachment``
+    compute stays False and the bill is refused with "The Vendor Bill
+    requires an attachment before posting" — which reads exactly like a
+    product defect and is not one. dto_account's own test records the same
+    trap (tests/test_wf016_vendor_bill.py:70-85, "learned the hard way").
     """
     name = name or fx(f"{MARK} supplier.pdf")
     payload = base64.b64encode(b"%PDF-1.4 QA fixture").decode()
     if via == "move":
         return rpc.write("account.move", [move_id], {
-            "attachment_ids": [(0, 0, {"name": name, "datas": payload})]})
+            "attachment_ids": [(0, 0, {"name": name, "datas": payload,
+                                       "res_model": "account.move"})]})
     return rpc.create("ir.attachment", {
         "name": name, "datas": payload,
         "res_model": "account.move", "res_id": move_id})

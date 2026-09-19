@@ -528,7 +528,15 @@ def test_tc265(ctx):
 
         with ctx.step("Step 2: the list view carries the column as "
                       "optional='show'"):
-            arch = form_arch(ctx, "account.move", "list")
+            # The VENDOR BILL list, named explicitly. dto_account extends
+            # account.view_in_invoice_bill_tree
+            # (dto_account/views/account_move_views.xml:41); the default
+            # account.move list is account.view_invoice_tree
+            # (string="Invoices"), which it does not extend. Reading the
+            # default reported the column as missing when it is present in
+            # the view AP actually opens.
+            arch = form_arch(ctx, "account.move", "list",
+                             xmlid="account.view_in_invoice_bill_tree")
             ctx.log(f"list arch length: {len(arch)}")
             ctx.check_true(
                 "have_attachment is a column on the bill list",
