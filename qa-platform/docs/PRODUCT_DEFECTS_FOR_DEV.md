@@ -275,6 +275,73 @@ Blocks `TEST-WF020-TC301`. Known since the earlier triage.
 
 ---
 
+## Severity 4 — fragile by construction, not currently failing
+
+### 4.1 The Packaging completion gate matches a work centre by literal name
+
+**`project-addons/dto_mrp_account/models/mrp_production.py:134-137`**
+
+```python
+def button_mark_done(self):
+    for order in self:
+        if sum(order.workorder_ids.filtered(
+                lambda workorder: workorder.workcenter_id.name == 'Packaging'
+               ).mapped('duration')) == 0:
+            raise UserError(_('You cannot finish a manufacturing order '
+                              'without any work done in Packaging. 
+ '
+                              'all work orders have 0 duration.'))
+```
+
+Byte-identical to v17 (`dto_17_custom/.../mrp_production.py:95-98`), so this
+is **not** a v19 regression. It is reported because the QA suite met it for
+the first time when Stage 7 deployed the module, and two things about it
+are worth a decision rather than a surprise later.
+
+**It is currently working.** Measured on d1v19, completed MOs by year:
+
+| `date_finished` | with a Packaging work order | with no work order at all |
+|---|---|---|
+| 2026 | 4,639 | 90 (all `is_historical_data`) |
+| 2025 | 5,993 | 3 |
+| 2024 | 732 | 6,808 |
+| 2023 and earlier | 0 | 28,874 |
+
+There is a clean cutover in 2024. The 35,685 older MOs predate the gate;
+they are not evidence against it.
+
+**Point 1 — the name is a literal string.** `w.name == 'Packaging'` is not
+an xmlid, not a flag on `mrp.workcenter`, and not a company setting. So:
+
+* renaming the work centre in the UI silently disables **every** MO
+  completion on the database;
+* the same happens under a translation, because `mrp.workcenter.name` is a
+  translated field and `==` compares the value in the acting user's
+  language;
+* a second company whose packaging centre is named anything else can never
+  complete an MO, with no way for an administrator to see why.
+
+d1v19 currently carries **42 active work centres named exactly
+`Packaging`** in one company. The gate needs only one, so this is not
+breaking anything — but it does mean the string is load-bearing in 42
+places and guarded in none.
+
+*Suggested* — a Boolean on `mrp.workcenter` (`is_packaging`) or an xmlid,
+either of which survives a rename and a translation.
+
+**Point 2 — the message is wrong when there are no work orders.**
+`sum()` of an empty recordset is `0`, so an MO with **no** work orders at
+all takes the same branch and is told *"all work orders have 0 duration"*.
+An operator reading that will look for a work order to fill in; there is
+none to find, and the real fix is on the BoM. Worth splitting into two
+messages.
+
+**Found by** `TEST-WF007-TC106` … `TC112`, which now satisfy the gate in
+the fixture (the BoM carries a Packaging operation and 15 minutes are
+logged against it) rather than working around it.
+
+---
+
 ## Already fixed and merged
 
 For completeness — these were found the same way and are closed.
