@@ -1668,9 +1668,21 @@ def print_packing_slips(rpc, picking_ids):
     how TC209 step 6 controls page order. The list-bound server action
     (``views/stock_picking_views.xml:44-54``) only calls this same method,
     so driving it directly tests the same code.
+
+    The ids are passed as ONE positional argument, not wrapped again.
+    ``OdooRPC.call`` sends ``list(args)`` as the JSON-RPC ``args``, and
+    call_kw takes ``args[0]`` as the ids — so ``call(model, method, ids)``
+    is what reaches ``browse(ids)``. This used to read
+    ``[list(picking_ids)]``, one bracket too many, which made
+    ``args[0] == [[id, id]]`` and ``browse([[id, id]])`` — a recordset whose
+    ``_ids`` holds a LIST. Reading any field on it then raised
+    ``TypeError: unhashable type: 'list'`` from
+    ``odoo/orm/fields.py:1671`` (``field_cache[record_id]``), at
+    stock_picking.py:89, before the method's own body ran at all. That was
+    reported as a product defect and is not one.
     """
     return rpc.call("stock.picking", "action_print_attached_packing_slip",
-                    [list(picking_ids)])
+                    list(picking_ids))
 
 
 def attachment_row(rpc, attachment_id: int, fields_=None) -> dict:

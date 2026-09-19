@@ -60,9 +60,31 @@ which is routine.
 
 **Blocks** `TEST-WF015-TC202`, `TC203`, `TC204`, `TC205`.
 
-**Suggested fix** — `line.product_uom_id.rounding`, and replace the
-`'done'` term with a `locked` check (v19 carries `purchase.order.locked`
-as a plain Boolean).
+**A THIRD defect in the same file, same rename.** `write()` at :106 reads
+
+```python
+if 'date_planned' in vals and 'product_uom' not in vals and ...
+```
+
+That key is the guard's own BYPASS. Left as the old name it never matches,
+so a write that changes the unit of measure alongside `date_planned` runs
+the check it was written to skip. Worse than the dead `'done'` term,
+which only made the guard cover less.
+
+**Not a defect, for completeness** — `product_type in ('consu', 'product')`
+also names a value v19 removed (`product.template.type` is now
+`consu / service / combo`). It costs nothing: v19 folded storable goods
+into `consu` with an `is_storable` flag, so the set covered is unchanged.
+Left alone deliberately.
+
+**FIXED** on branch `fix/wf015-purchase-line-uom-rename`:
+`line.product_uom_id.rounding`, `state == 'purchase'` (which still catches
+a locked order — v19 closes one as `state='purchase'` with `locked=True`),
+and `'product_uom_id' not in vals` in `write()`. Measured after the fix:
+`TC202`, `TC203`, `TC204` PASS; `TC205` reaches its v17-baseline block;
+`TC206` still fails, but now only on the documented `done`-state
+divergence it was written to record, with the error message matching
+verbatim.
 
 ---
 
@@ -95,26 +117,36 @@ look for it.
 
 ---
 
-### 1.3 Printing a packing slip raises
+### 1.3 WITHDRAWN — the packing slip raised because WE called it wrong
 
-**`project-addons/dto_purchase_stock/models/stock_picking.py:87-91`**
+**This entry was wrong and is retracted.**
 
-```python
-mimetype = self.env['ir.attachment']._compute_mimetype({
-    'name': record.packing_slip_attachment_name
-})
-```
+The traceback never reaches `_compute_mimetype`. It dies one line earlier:
 
 ```
-stock.picking.action_print_attached_packing_slip failed:
-unhashable type: 'list'
+dto_purchase_stock/models/stock_picking.py:89, in <lambda>
+    for record in self.filtered(lambda r: r.packing_slip_attachment)
+odoo/orm/fields.py:1671, in __get__
+    value = field_cache[record_id]
+TypeError: unhashable type: 'list'
 ```
 
-**Impact** — the Print Packing Slip button raises for the user. Worth
-checking `_compute_mimetype`'s v19 signature; the v17 call shape appears
-not to survive.
+`record_id` is a list, so the recordset's `_ids` held a list — something
+only a caller can produce. The QA helper passed the ids one bracket too
+deep (`call(model, method, [list(ids)])` instead of
+`call(model, method, list(ids))`), so `call_kw` did `browse([[id, id]])`
+and reading ANY field on the result raised.
 
-**Blocks** 3 cases in WF-015.
+`_compute_mimetype` is byte-identical on v17 and v19; the earlier note
+about its "v17 call shape" was unfounded. With the helper corrected,
+`TEST-WF015-TC211` PASSES and `TC210` blocks only on the PrintNode
+hardware it genuinely needs.
+
+**One real question does survive**, recorded separately rather than as a
+defect: with the call fixed, `TEST-WF015-TC209` shows the merged pages
+come out in **id order, not selection order**. Both slips are present and
+the merge itself works. Whether selection order is meant to be honoured is
+a question for the team, not an assumption.
 
 ---
 
