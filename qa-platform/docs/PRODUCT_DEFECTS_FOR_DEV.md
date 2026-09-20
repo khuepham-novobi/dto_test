@@ -605,13 +605,44 @@ What changed on v19:
   `property_stock_valuation_account_id.account_stock_variation_id` — the
   counter-account now hangs off `account.account`.
 
-Measured on d1v19: that column is **NULL on all 188 accounts**. With no
-counter-leg, real-time valuation has nothing to post against.
+Measured on d1v19: that column is **NULL on all 188 accounts**.
 
-**If that is not intended, every receipt and delivery on v19 is producing
-no valuation entry** — which would reach far past this case, into the
-WF-013 COGS suite. Recorded by `TEST-WF015-TC220`, which BLOCKS with this
-evidence rather than reporting a wrong counter.
+**CORRECTION (2026-09-20).** The first version of this entry said that the
+empty counter-account was the cause and that "real-time valuation has
+nothing to post against". Wider measurement does NOT support that
+mechanism: inventory adjustments post entries perfectly well on the same
+database, with the same 188 accounts. The empty column is a fact; it is
+not the explanation.
+
+What the evidence does support is narrower and stronger. Every valued
+stock move created on 2026-09-20, grouped by what it is:
+
+| from -> to | valued moves | with a journal entry |
+|---|---|---|
+| inventory -> internal (count up) | 117 | **1** |
+| internal -> customer (delivery) | 62 | **0** |
+| supplier -> internal (receipt) | 14 | **0** |
+| internal -> production (components) | 11 | **0** |
+| production -> internal (finished) | 11 | **0** |
+| internal -> inventory (count down) | 6 | **2** |
+
+Three of 221 valued moves produced an entry, and all three are inventory
+adjustments. **Not one receipt, delivery, component consumption or
+finished-goods move posted anything**, while each carries a non-zero
+`stock.move.value`.
+
+Also measured, and worth separating: 134 of the unposted moves sit on 59
+categories whose `property_valuation` column is NULL — QA fixture
+categories, which is our problem, not yours. The other **84 are on a
+single category that stores `{"1": "real_time"}` properly**, so
+configuration does not account for them.
+
+**The question for the team** is therefore: on v19, when is the valuation
+entry for a receipt or a delivery supposed to be written? If the answer is
+"at the move", this is a live defect across the whole estate. Recorded by
+`TEST-WF015-TC220`, which BLOCKS with this evidence rather than reporting a
+wrong counter, and it is the likeliest explanation for WF-008's labour and
+overhead pairs coming back empty (`TEST-WF008-TC239`, `TC242`).
 
 ---
 

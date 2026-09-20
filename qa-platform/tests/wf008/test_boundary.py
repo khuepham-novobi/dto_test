@@ -40,7 +40,8 @@ EXPECTED v19 OUTCOME: PASS once the zero guard is added to both divisions.
 but the guard is still absent unless someone adds it.
 """
 from framework.registry import test_case
-from tests.wf008.common import (CATALOGUE_RATE, COMPONENT_TOTAL,  # noqa: F401
+from tests.wf008.common import (require_exclusive_pools,
+                                CATALOGUE_RATE, COMPONENT_TOTAL,  # noqa: F401
                                 LABOUR_MINUTES, LABOUR_SWITCH, MARK, MO_QTY,
                                 OVERHEAD_SWITCH, WORKFLOW, WORKFLOW_NAME,
                                 build_mo, describe_lines, ensure_pool,
@@ -81,6 +82,7 @@ def test_tc256(ctx):
         env = standard_environment(ctx)
         ensure_pool(ctx, "Factory Overhead", CATALOGUE_RATE,
                     expense_account_id=env["overhead_account"]["id"])
+        require_exclusive_pools(ctx, 1)
         ctx.check("overhead pools in force", 1, len(live_pools(rpc)))
         ctx.log(f"overhead on a full run would be "
                 f"{round(COMPONENT_TOTAL * CATALOGUE_RATE, 2)} — non-zero, "

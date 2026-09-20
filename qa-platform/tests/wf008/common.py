@@ -586,6 +586,17 @@ def record_time(ctx, mo_id, workcenter_id, minutes, employee_id=None,
                           ("workcenter_id", "=", workcenter_id)],
         ["name"], limit=1)
     if not workorders:
+        # Say so. Returning a silent None means labor_cost stays 0, and
+        # dto_mrp_account only raises its missing-account UserError when
+        # labor_cost is NON-zero (models/stock_move.py:171-174) — so a case
+        # that expects the refusal sees none and reports the guard as
+        # broken, when in truth no time was ever recorded.
+        present = rpc.search_read(
+            "mrp.workorder", [("production_id", "=", mo_id)],
+            ["name", "workcenter_id"])
+        ctx.log(f"[warn] no work order on work centre {workcenter_id} for "
+                f"MO {mo_id}, so NO time was recorded. The MO carries "
+                f"{len(present)} work order(s): {present!r}")
         return None
     start = "2026-01-15 08:00:00"
     values = {"workorder_id": workorders[0]["id"],
@@ -605,6 +616,22 @@ def record_time(ctx, mo_id, workcenter_id, minutes, employee_id=None,
         rpc.write("mrp.workcenter.productivity", [row_id],
                   {"date_end": f"2026-01-15 {end_hour:02d}:"
                                f"{end_minute:02d}:00"})
+    # dto_mrp_account computes labour as
+    #     employee_cost * duration / 60   (models/stock_move.py:169)
+    # and only raises its missing-account guard when that is NON-zero. Both
+    # factors are read back here: a zero in either makes every labour
+    # assertion in this suite silently vacuous.
+    row = rpc.read("mrp.workcenter.productivity", [row_id],
+                   [f for f in ("duration", "employee_cost", "employee_id",
+                                "date_start", "date_end")
+                    if rpc.field_exists("mrp.workcenter.productivity", f)])[0]
+    ctx.log(f"productivity row {row_id}: {row!r}")
+    if not row.get("duration") or not row.get("employee_cost"):
+        ctx.log(f"[warn] labour cost from this row is ZERO "
+                f"(duration={row.get('duration')!r}, "
+                f"employee_cost={row.get('employee_cost')!r}) — "
+                "dto_mrp_account's labour pair and its missing-account "
+                "guard both depend on a non-zero product of the two")
     return row_id
 
 

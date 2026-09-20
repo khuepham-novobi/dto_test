@@ -50,7 +50,8 @@ pair. That is WF-008's "same money, two mechanisms" warning, and step 8 is
 the assertion that catches it.
 """
 from framework.registry import test_case
-from tests.wf008.common import (CATALOGUE_RATE, COMPONENT_TOTAL,  # noqa: F401
+from tests.wf008.common import (require_exclusive_pools,
+                                CATALOGUE_RATE, COMPONENT_TOTAL,  # noqa: F401
                                 LABOUR_MINUTES, LABOUR_SWITCH, LABOUR_TOTAL,
                                 MARK, MO_QTY, OVERHEAD_SWITCH, WORKFLOW,
                                 WORKFLOW_NAME, build_mo, describe_lines,
@@ -132,6 +133,7 @@ def test_tc240(ctx):
                         expense_account_id=env["overhead_account"]["id"])
             pools = live_pools(rpc)
             ctx.log(f"pools: {pools!r}")
+            require_exclusive_pools(ctx, 1)
             ctx.check("overhead pools in force", 1, len(pools))
             ctx.check("the pool rate", CATALOGUE_RATE,
                       round(pools[0]["percentage"], 4))

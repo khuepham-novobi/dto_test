@@ -49,7 +49,8 @@ worse, generates the entry from frozen rates giving plausible numbers with
 wrong provenance. TC246 step 7 is the assertion that separates the two.
 """
 from framework.registry import test_case
-from tests.wf008.common import (CATALOGUE_RATE, COMPONENT_TOTAL,  # noqa: F401
+from tests.wf008.common import (require_exclusive_pools,
+                                CATALOGUE_RATE, COMPONENT_TOTAL,  # noqa: F401
                                 LABOUR_MINUTES, LABOUR_SWITCH, MARK, MO_QTY,
                                 OVERHEAD_SWITCH, WORKFLOW, WORKFLOW_NAME,
                                 ZERO_YIELD_RATE, build_mo, describe_lines,
@@ -151,6 +152,7 @@ def test_tc244(ctx):
                 expense_account_id=env["overhead_account"]["id"])
             live = live_pools(rpc)
             ctx.log(f"pools: {live!r}")
+            require_exclusive_pools(ctx, 2)
             ctx.check("overhead pools in force", 2, len(live))
             names = {p["id"]: p["name"] for p in live}
             factory_name = names[pools["factory"]]
@@ -332,6 +334,7 @@ def test_tc246(ctx):
             pool_id = ensure_pool(
                 ctx, "Factory Overhead", CATALOGUE_RATE,
                 expense_account_id=env["overhead_account"]["id"])
+            require_exclusive_pools(ctx, 1)
             ctx.check("overhead pools in force", 1, len(live_pools(rpc)))
             original_name = rpc.read("mrp.overhead.cost.setting", [pool_id],
                                      ["name"])[0]["name"]
@@ -491,10 +494,21 @@ def test_tc246(ctx):
             except Exception as exc:      # noqa: BLE001
                 ctx.log(f"[warn] pool restore failed: {exc}")
             ctx.log(f"pool after restore: {restored!r}")
-            ctx.check_true(
-                "the pool's rate and name were restored",
-                restored.get("name") == original_name
-                and round(restored.get("percentage", 0.0), 4)
-                == CATALOGUE_RATE,
-                actual_desc=restored)
+            # This step runs in the FINALLY, so it also runs when an earlier
+            # precondition blocked the case. When it does, pool_id and
+            # original_name are still None: there is nothing to restore,
+            # and asserting a restoration that was never needed turns a
+            # correct BLOCKED into a misleading FAILED. Measured — the
+            # write came back "Missing required value for the field
+            # 'Name'", because it was writing name=None.
+            if not pool_id or not original_name:
+                ctx.log("nothing to restore — the fixture pool was never "
+                        "created, so no rate or name was changed")
+            else:
+                ctx.check_true(
+                    "the pool's rate and name were restored",
+                    restored.get("name") == original_name
+                    and round(restored.get("percentage", 0.0), 4)
+                    == CATALOGUE_RATE,
+                    actual_desc=restored)
         _restore(ctx, comp_id, original)

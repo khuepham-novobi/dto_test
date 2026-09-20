@@ -56,7 +56,8 @@ F174's MTO chain walk (whose two halves live in different modules, so
 porting one without the other fails silently).
 """
 from framework.registry import test_case
-from tests.wf008.common import (CATALOGUE_RATE, COMPONENT_TOTAL,  # noqa: F401
+from tests.wf008.common import (require_exclusive_pools,
+                                CATALOGUE_RATE, COMPONENT_TOTAL,  # noqa: F401
                                 LABOUR_MINUTES, LABOUR_SWITCH, MARK, MO_QTY,
                                 OVERHEAD_SWITCH, WORKFLOW, WORKFLOW_NAME,
                                 build_mo, describe_lines,
@@ -187,6 +188,7 @@ def test_tc249(ctx):
             ensure_pool(ctx, "Factory Overhead", CATALOGUE_RATE,
                         expense_account_id=env["overhead_account"]["id"],
                         analytic={str(holder["pool_overlay"]): 100})
+            require_exclusive_pools(ctx, 1)
             ctx.check("overhead pools in force", 1, len(live_pools(rpc)))
 
         with ctx.step("Steps 1-3 — THE MO's DISTRIBUTION. The workbook "
@@ -416,6 +418,7 @@ def test_tc250(ctx):
             ensure_pool(ctx, "Factory Overhead", CATALOGUE_RATE,
                         expense_account_id=env["overhead_account"]["id"],
                         analytic={str(holder["pool_overlay"]): 100})
+            require_exclusive_pools(ctx, 1)
             ctx.check("overhead pools in force", 1, len(live_pools(rpc)))
 
         with ctx.step("Steps 1-2: create the MO MANUALLY — no originating "
