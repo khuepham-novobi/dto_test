@@ -428,6 +428,57 @@ accounting group so that the deletion right is the only thing it varies.
 
 ---
 
+### 2.11 Blind shipping prints the company's name and address
+
+The whole point of a blind packing slip is that the end customer must not
+learn who actually shipped the goods. On v19 it does.
+
+`dto_sale_stock/report/report_ship_blind.xml:6` suppresses the header by
+setting `report_header_style` to `display: none;`. In v19's core layouts
+that variable is read **exactly once**:
+
+```
+web/views/report_templates.xml:439
+    <div t-attf-class="header o_company_#{company.id}_layout"
+         t-att-style="report_header_style">
+```
+
+Line 439 is inside `external_layout_bold`. The other six layouts —
+`striped` (311), `boxed` (373), **`standard` (502)**, `folder` (563),
+`wave` (651), `bubble` (724) — render their header div with **no**
+`t-att-style`, so the variable is ignored.
+
+`res.company.external_report_layout_id` on d1v19 resolves to
+**`web.external_layout_standard`**.
+
+Measured in the rendered blind slip:
+
+```
+header:  <div class="header o_company_1_layout">                     <- no style
+footer:  <div class="footer o_company_1_layout mt-auto" style="display: none;">
+```
+
+The footer is suppressed; the header is not. And the header carries:
+
+```
+DataOne Systems, LLC
+9004 Ambassador Row
+Dallas, TX 75247
+```
+
+**Nothing raises.** The document renders, looks right at a glance, and
+leaks exactly what the feature exists to hide.
+
+**Fix** — either patch the header div of the layout(s) actually in use to
+honour `report_header_style`, as `external_layout_bold` does, or have the
+blind template suppress the header by a means every layout respects.
+
+**Recorded by** `TEST-WF011-TC164`. The test's own comment already noted
+that v19 keeps the hook on `external_layout_bold` only; the assertion is
+written to the v17 expectation and correctly fails.
+
+---
+
 ### 2.9 A product with no cycle-count category cannot have its stock adjusted
 
 **`project-addons/dto_cycle_count/models/stock_quant.py:36`**
@@ -475,6 +526,39 @@ fixed: `set_stock` was writing `inventory_quantity_auto_apply` without
 (v19 `addons/stock/models/stock_quant.py:229-230`), the warehouse stayed
 empty and `_apply_inventory` was never reached. An empty warehouse was
 hiding this defect.
+
+---
+
+### 2.10 One orphaned report action survived the uninstall, still on a menu
+
+`tools/uninstall_non_migrated.py` removed `printnode_base` cleanly except
+for **exactly one record**:
+
+```
+ir.actions.report  id 649
+  xmlid        printnode_base.action_report_package_slip_zpl
+  report_name  printnode_base.report_package_slip_zpl   <- template DELETED
+  report_type  qweb-text
+  binding_model_id  526 = stock.package
+```
+
+The QWeb template it names is gone — `ir_ui_view` has **0** rows for
+`printnode_base.report_package_slip_zpl` — but the action is still bound to
+`stock.package`, so it is still offered in that model's **Action** menu.
+Choosing it fails.
+
+**Scope, measured** — this is the only survivor. Across every uninstalled
+module there is exactly one leftover `ir.actions.report`, and
+`ir_model_data` holds nothing else at all from `printnode_base`. So the
+uninstall is otherwise clean; this is a single missed record, not a
+pattern.
+
+**Fix** — delete the action, or have `uninstall_non_migrated.py` drop
+report actions along with the views they name.
+
+**Found by** `TEST-WF011-TC011`, which asserts that every report action
+names a template that exists. It is correct and is left failing until the
+record is removed.
 
 ---
 

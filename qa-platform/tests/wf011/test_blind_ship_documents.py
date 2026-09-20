@@ -1027,6 +1027,21 @@ def test_tc163(ctx):
             pdf_first = report_pdf(ctx, REPORT_DELIVERY_SLIP, [first])
 
         with ctx.step("Capture the produced PDF."):
+            # DIAGNOSTIC: render the SAME report as HTML and save it too.
+            # The PDF's header is a separate wkhtmltopdf sub-document, so
+            # "PACKING SLIP is absent from the PDF text" cannot by itself
+            # say whether the heading was never rendered or was rendered
+            # into a header the extractor does not read. The HTML carries
+            # the header inline and settles it.
+            try:
+                _html = report_html(ctx, REPORT_DELIVERY_SLIP, [first])
+                save_report_artifact(ctx, "TC163-delivery-slip-html",
+                                     _html.encode("utf-8"), ".html")
+                ctx.log(f"HTML render: {len(_html)} chars, "
+                        f"'PACKING SLIP' x{_html.count('PACKING SLIP')}, "
+                        f"o_company_tagline x{_html.count('o_company_tagline')}")
+            except Exception as exc:      # noqa: BLE001
+                ctx.log(f"[note] HTML diagnostic render failed: {exc}")
             path = save_report_artifact(ctx, "TC163-delivery-slip-from-first",
                                         pdf_first, ".pdf")
             ctx.check("the print route returned a PDF",
@@ -1036,6 +1051,44 @@ def test_tc163(ctx):
         with ctx.step("Extract the text of the PDF."):
             text_first, pages_first = _pdf_signal(
                 ctx, pdf_first, "Delivery Slip printed from the first picking")
+
+        with ctx.step("Prove the extractor can read the PDF's HEADER before "
+                      "asserting about a string that only lives there."):
+            # pdf_text()'s own docstring says wkhtmltopdf subsets fonts and
+            # may emit glyph indices instead of ASCII, "in which case this
+            # returns None and the caller must report BLOCKED naming the
+            # missing extractor — it must never silently assert against an
+            # empty string." Its guard checks the WHOLE document for a
+            # three-letter run, so a readable BODY masks an unreadable
+            # HEADER, and PACKING SLIP lives only in the header.
+            #
+            # Measured on this build: the HTML render of the same report and
+            # the same picking carries 'PACKING SLIP' once, inside
+            # <div class="o_company_tagline ..." name="moto">, so the
+            # heading IS produced. The PDF text came back with 53,221
+            # characters of body and none of the header.
+            #
+            # A control string that is in the header too settles which it
+            # is, instead of reporting a rendering failure that did not
+            # happen.
+            _cid = m2o_id(rpc.read("res.users", [rpc.uid],
+                                   ["company_id"])[0]["company_id"])
+            company_name = rpc.read("res.company", [_cid],
+                                    ["name"])[0]["name"]
+            if company_name and company_name not in (text_first or ""):
+                ctx.blocked(
+                    "The PDF text extractor cannot read this document's "
+                    f"HEADER: the company name {company_name!r} is rendered "
+                    "there on every page and does not appear in the "
+                    f"{len(text_first or '')} characters it returned. "
+                    "PACKING SLIP lives only in the header, so asserting "
+                    "its count here would report a rendering failure that "
+                    "did not happen — the HTML render of the same report "
+                    "carries it. pdf_text() inflates FlateDecode streams "
+                    "and collects parenthesised literals with the standard "
+                    "library only; wkhtmltopdf's subset fonts defeat that. "
+                    "Install a real extractor (pypdf or pdfminer.six) in "
+                    "the qa-platform venv to make this case answerable.")
 
         with ctx.step("Assert the string PACKING SLIP occurs exactly 2 times — "
                       "one per non-cancelled outgoing picking. This is the "
